@@ -114,6 +114,7 @@
     } }, [field("Correo", email), field("Contraseña", pw), btn, err]);
     shell([el("main", { class: "auth" }, [
       el("div", { class: "logo big", role: "img", "aria-label": "Entrena Your Life" }),
+      el("p", { class: "slogan", text: "Entreno inteligente. Resultados reales." }),
       el("h1", { text: "Tu entreno" }),
       el("p", { text: "Entra con el correo y la contraseña que te ha dado tu entrenador." }),
       form,
@@ -579,7 +580,7 @@
     var main = el("main", { class: "day" });
     main.appendChild(el("section", { class: "card" }, [
       el("h2", { text: "Progresión semana a semana" }),
-      el("p", { class: "meta", text: "Por cada ejercicio: series hechas, repeticiones totales, kilo máximo y kilos movidos (reps × kg de todas las series). La etiqueta compara los kilos movidos de las dos últimas semanas con datos." })
+      el("p", { class: "meta", text: "Cada barra son los kilos movidos esa semana (reps × kg de todas las series). Debajo: series hechas, repeticiones totales y kilo máximo. Verde: sube · Naranja: se mantiene · Rojo: baja respecto a la semana anterior." })
     ]));
     var base = ST.PLAN.semanas[0];
     base.dias.forEach(function (d0, di) {
@@ -594,27 +595,30 @@
           rows.push({ w: w, st: st, planned: ex ? ex.series.length : 0 });
         }
         var t = trend(tons);
+        var max = Math.max.apply(null, tons.map(function (v) { return v || 0; }));
         var prev = null;
-        var trs = rows.map(function (r) {
-          var st = r.st, has = st && st.any;
-          var cells = [el("th", { scope: "row", text: "S" + (r.w + 1) })];
-          cells.push(el("td", null, [el("b", { text: has ? String(st.sets) : "—" }), el("small", { text: "/" + r.planned })]));
-          cells.push(el("td", null, [el("b", { text: has ? String(st.reps) : "—" })]));
-          cells.push(el("td", null, [el("b", { text: has && st.kg ? num(st.kg) : "—" })]));
-          var tonCell = [el("b", { text: has && st.ton ? num(st.ton) : "—" })];
-          if (has && prev && prev.ton && st.ton) tonCell.push(delta(st.ton, prev.ton, "kg"));
-          cells.push(el("td", null, tonCell));
+        var cols = rows.map(function (r) {
+          var st = r.st, has = st && st.any, ton = has ? st.ton : 0;
+          var h = max ? Math.max(ton ? 6 : 0, Math.round(ton / max * 100)) : 0;
+          var cls = "pbar";
+          if (has && prev && prev.ton) cls += ton > prev.ton * 1.02 ? " up" : ton < prev.ton * 0.95 ? " down" : " eq";
+          var col = el("div", { class: "pcol" + (r.w === UI.w ? " cur" : "") }, [
+            el("span", { class: "pval", text: has && ton ? num(ton) : "" }),
+            el("div", { class: "ptrack" }, [el("div", { class: cls + (has ? "" : " empty"), style: "height:" + h + "%" })]),
+            el("span", { class: "pwk", text: "S" + (r.w + 1) }),
+            el("span", { class: "pstat", text: has ? st.sets + "/" + r.planned + " ser" : "—" }),
+            el("span", { class: "pstat", text: has ? st.reps + " reps" : "" }),
+            el("span", { class: "pstat", text: has && st.kg ? num(st.kg) + " kg máx" : "" })
+          ]);
           if (has) prev = st;
-          return el("tr", { class: r.w === UI.w ? "cur" : "" }, cells);
+          return col;
         });
         main.appendChild(el("section", { class: "card prog" }, [
           el("div", { class: "proghead" }, [
-            el("div", { class: "titles" }, [el("h2", { text: ex0.n }), el("p", { class: "meta", text: (ex0.g || []).join(", ") })]),
-            el("div", { class: "progside" }, [spark(tons), el("span", { class: "pill " + t.cls, text: t.txt })])
+            el("div", { class: "titles" }, [el("h2", { text: ex0.n }), el("p", { class: "meta", text: (ex0.g || []).join(", ") + ((ex0.g || []).length ? " · " : "") + "kg movidos por semana" })]),
+            el("span", { class: "pill " + t.cls, text: t.txt })
           ]),
-          el("div", { class: "tablewrap" }, [el("table", { class: "ptable progt" }, [
-            el("thead", null, [el("tr", null, [el("th", { text: "Semana" }), el("th", { text: "Series" }), el("th", { text: "Reps" }), el("th", { text: "Kg máx" }), el("th", { text: "Kg movidos" })])]),
-            el("tbody", null, trs)])])
+          el("div", { class: "pchart", role: "img", "aria-label": "Kilos movidos por semana: " + tons.map(function (v, i) { return "S" + (i + 1) + " " + (v ? num(v) : "sin datos"); }).join(", ") }, cols)
         ]));
       });
     });
