@@ -319,6 +319,8 @@
     kids.push(header());
     if (UI.view === "volumen" && !ST.editing) {
       kids.push(nav(true)); kids.push(volumeView());
+    } else if (UI.view === "progresion" && !ST.editing) {
+      kids.push(progressionView());
     } else {
       kids.push(nav());
       var d = day();
@@ -352,7 +354,8 @@
       ST.PLAN.objetivo ? el("p", { class: "goal", text: ST.PLAN.objetivo }) : null,
       ST.editing ? null : el("div", { class: "seg", role: "tablist", "aria-label": "Vista" }, [
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "entreno"), class: UI.view === "entreno" ? "on" : "", text: "Entreno", onclick: function () { UI.view = "entreno"; render(); } }),
-        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "volumen"), class: UI.view === "volumen" ? "on" : "", text: "Volumen", onclick: function () { UI.view = "volumen"; render(); } })
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "volumen"), class: UI.view === "volumen" ? "on" : "", text: "Volumen", onclick: function () { UI.view = "volumen"; render(); } }),
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "progresion"), class: UI.view === "progresion" ? "on" : "", text: "Progresión", onclick: function () { UI.view = "progresion"; render(); } })
       ])
     ]);
   }
@@ -449,13 +452,14 @@
   // ================= STATS / PROGRESS / VOLUME =================
   function exStats(w, d, ex) {
     var L = ST.LOG[w + "-" + d], E = L && L.ej && L.ej[ex.id];
-    var r = { sets: 0, reps: 0, kg: 0, any: false };
+    var r = { sets: 0, reps: 0, kg: 0, ton: 0, any: false };
     if (!E) return r;
     (E.s || []).forEach(function (S, i) {
       if (i >= ex.series.length || !S) return;
       var reps = parseFloat(S.reps), kg = parseFloat(S.kg);
       if (reps > 0) { r.sets++; r.reps += reps; r.any = true; }
       if (kg > 0 && kg > r.kg) r.kg = kg;
+      if (reps > 0 && kg > 0) r.ton += reps * kg;
     });
     return r;
   }
@@ -543,6 +547,78 @@
         el("p", { class: "meta", text: "Para ver si el volumen de cada grupo sube, se mantiene o baja." }),
         el("div", { class: "tablewrap" }, [el("table", { class: "vtable" }, [el("thead", null, [el("tr", null, eh)]), el("tbody", null, eb)])])])
     ]);
+  }
+
+  // ================= PROGRESSION (week by week) =================
+  function trend(vals) {
+    // vals: tonnage per week (null = no data). Compare the last two weeks with data.
+    var idx = []; vals.forEach(function (v, i) { if (v != null && v > 0) idx.push(i); });
+    if (idx.length < 2) return { cls: "", txt: idx.length ? "Falta otra semana" : "Sin datos" };
+    var a = vals[idx[idx.length - 2]], b = vals[idx[idx.length - 1]];
+    var pct = (b - a) / a * 100;
+    var flat = 0;
+    for (var k = idx.length - 1; k > 0; k--) { var p = (vals[idx[k]] - vals[idx[k - 1]]) / vals[idx[k - 1]] * 100; if (p < 2) flat++; else break; }
+    if (pct >= 2) return { cls: "go", txt: "Progresa +" + num(pct) + "%" };
+    if (pct <= -5) return { cls: "bad", txt: "Baja " + num(pct) + "%" };
+    return { cls: "warn", txt: flat >= 2 ? "Estancado " + (flat + 1) + " sem" : "Estancado" };
+  }
+  function spark(vals) {
+    var w = 120, h = 32, pad = 3, pts = [];
+    var max = Math.max.apply(null, vals.map(function (v) { return v || 0; }));
+    if (!max) return null;
+    var n = vals.length;
+    vals.forEach(function (v, i) { if (v != null && v > 0) pts.push([pad + (n > 1 ? i * (w - 2 * pad) / (n - 1) : 0), h - pad - (v / max) * (h - 2 * pad)]); });
+    var NS = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 " + w + " " + h); svg.setAttribute("class", "spark"); svg.setAttribute("aria-hidden", "true");
+    if (pts.length > 1) { var pl = document.createElementNS(NS, "polyline"); pl.setAttribute("points", pts.map(function (p) { return p.join(","); }).join(" ")); pl.setAttribute("fill", "none"); pl.setAttribute("class", "spark-line"); svg.appendChild(pl); }
+    pts.forEach(function (p, i) { var c = document.createElementNS(NS, "circle"); c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", i === pts.length - 1 ? 3 : 2); c.setAttribute("class", "spark-dot"); svg.appendChild(c); });
+    return svg;
+  }
+  function progressionView() {
+    var nW = ST.PLAN.semanas.length;
+    var main = el("main", { class: "day" });
+    main.appendChild(el("section", { class: "card" }, [
+      el("h2", { text: "Progresión semana a semana" }),
+      el("p", { class: "meta", text: "Por cada ejercicio: series hechas, repeticiones totales, kilo máximo y kilos movidos (reps × kg de todas las series). La etiqueta compara los kilos movidos de las dos últimas semanas con datos." })
+    ]));
+    var base = ST.PLAN.semanas[0];
+    base.dias.forEach(function (d0, di) {
+      main.appendChild(el("h3", { class: "dayhead", text: "Día " + (di + 1) + (d0.nombre ? " · " + d0.nombre : "") }));
+      d0.ej.forEach(function (ex0) {
+        var rows = [], tons = [];
+        for (var w = 0; w < nW; w++) {
+          var dd = ST.PLAN.semanas[w].dias[di];
+          var ex = dd && (dd.ej.filter(function (e) { return e.id === ex0.id; })[0] || dd.ej.filter(function (e) { return e.n === ex0.n; })[0]);
+          var st = ex ? exStats(w, di, ex) : null;
+          tons.push(st && st.any ? st.ton : null);
+          rows.push({ w: w, st: st, planned: ex ? ex.series.length : 0 });
+        }
+        var t = trend(tons);
+        var prev = null;
+        var trs = rows.map(function (r) {
+          var st = r.st, has = st && st.any;
+          var cells = [el("th", { scope: "row", text: "S" + (r.w + 1) })];
+          cells.push(el("td", null, [el("b", { text: has ? String(st.sets) : "—" }), el("small", { text: "/" + r.planned })]));
+          cells.push(el("td", null, [el("b", { text: has ? String(st.reps) : "—" })]));
+          cells.push(el("td", null, [el("b", { text: has && st.kg ? num(st.kg) : "—" })]));
+          var tonCell = [el("b", { text: has && st.ton ? num(st.ton) : "—" })];
+          if (has && prev && prev.ton && st.ton) tonCell.push(delta(st.ton, prev.ton, "kg"));
+          cells.push(el("td", null, tonCell));
+          if (has) prev = st;
+          return el("tr", { class: r.w === UI.w ? "cur" : "" }, cells);
+        });
+        main.appendChild(el("section", { class: "card prog" }, [
+          el("div", { class: "proghead" }, [
+            el("div", { class: "titles" }, [el("h2", { text: ex0.n }), el("p", { class: "meta", text: (ex0.g || []).join(", ") })]),
+            el("div", { class: "progside" }, [spark(tons), el("span", { class: "pill " + t.cls, text: t.txt })])
+          ]),
+          el("div", { class: "tablewrap" }, [el("table", { class: "ptable progt" }, [
+            el("thead", null, [el("tr", null, [el("th", { text: "Semana" }), el("th", { text: "Series" }), el("th", { text: "Reps" }), el("th", { text: "Kg máx" }), el("th", { text: "Kg movidos" })])]),
+            el("tbody", null, trs)])])
+        ]));
+      });
+    });
+    return main;
   }
 
   // ================= COACH: EDIT PLAN =================
