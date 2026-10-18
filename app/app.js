@@ -13,6 +13,7 @@
     var sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
     function ok(r) { if (r.error) throw r.error; return r.data; }
     return {
+      sb: sb,
       onRecovery: function (cb) { sb.auth.onAuthStateChange(function (ev) { if (ev === "PASSWORD_RECOVERY") cb(); }); },
       session: function () { return sb.auth.getSession().then(function (r) { return r.data.session; }); },
       signIn: function (email, pw) { return sb.auth.signInWithPassword({ email: email, password: pw }).then(ok); },
@@ -237,7 +238,11 @@
           if (loc && (!rem || (loc.editado || 0) > (rem.editado || 0))) { ST.LOG[k] = loc; queueSave(k); }
         });
       }
-      if (!ST.PLAN) { if (asCoach) { noPlanScreen(); } else { shell([topbar(), el("main", { class: "auth" }, [el("div", { class: "logo big" }), el("h1", { text: "Tu plan está en camino" }), el("p", { text: (CFG.ENTRENADOR || "Tu entrenador") + " aún no ha subido tu entreno. Vuelve a entrar en un rato." })])]); } return; }
+      if (!ST.PLAN) {
+        if (asCoach) { noPlanScreen(); }
+        else { shell([topbar(), el("header", { class: "top" }, [el("div", { class: "logo", role: "img", "aria-label": "Entrena Your Life" }), el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: "Entrena Your Life" })]), el("h1", { text: c.nombre || "Hola" }), el("p", { class: "goal", text: "Tu entreno está en camino. Mientras, empieza por la nutrición." })]), nutriView()]); }
+        return;
+      }
       if (UI.w == null || UI.w >= ST.PLAN.semanas.length) UI.w = currentWeek();
       render();
     }).catch(function (x) { shell([topbar(), el("p", { class: "err", text: errMsg(x) })]); });
@@ -252,6 +257,11 @@
         el("h1", { text: ST.client.nombre || ST.client.email }),
         el("p", { text: "Este cliente aún no tiene plan. Crea uno para empezar." }),
         field("Empezar desde", sel),
+        el("button", { class: "btn ghost wide", type: "button", text: "Ver su nutrición", onclick: function () {
+          shell([topbar(el("button", { class: "backbtn", type: "button", text: "← " + (ST.client.nombre || "Cliente"), onclick: function () { openClient(ST.client, true); } })),
+            el("header", { class: "top" }, [el("div", { class: "logo", role: "img", "aria-label": "Entrena Your Life" }), el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: "Nutrición" })]), el("h1", { text: ST.client.nombre || ST.client.email })]),
+            nutriView()]);
+        } }),
         el("button", { class: "btn primary wide", type: "button", text: "Crear plan", onclick: function () {
           var base;
           if (sel.value) { base = JSON.parse(JSON.stringify(ST.plans[sel.value])); }
@@ -318,7 +328,9 @@
     } })));
     else kids.push(topbar());
     kids.push(header());
-    if (UI.view === "volumen" && !ST.editing) {
+    if (UI.view === "nutri" && !ST.editing) {
+      kids.push(nutriView());
+    } else if (UI.view === "volumen" && !ST.editing) {
       kids.push(nav(true)); kids.push(volumeView());
     } else if (UI.view === "progresion" && !ST.editing) {
       kids.push(progressionView());
@@ -341,8 +353,12 @@
       }
       kids.push(main);
     }
-    if (ST.mode === "entrenador") kids.push(coachBar());
+    if (ST.mode === "entrenador" && !(UI.view === "nutri" && !ST.editing)) kids.push(coachBar());
     shell(kids);
+  }
+  function nutriView() {
+    if (!window.EYLNutri || !api.sb) return el("p", { class: "err", text: "No se pudo cargar la nutrición. Recarga la página." });
+    return window.EYLNutri.view({ sb: api.sb, coach: ST.mode === "entrenador", client: ST.client, flash: flash });
   }
   var leaveArmed = false;
   function confirmLeave() { if (leaveArmed) { leaveArmed = false; return true; } leaveArmed = true; flash("Tienes cambios sin guardar. Pulsa otra vez para salir sin guardar."); setTimeout(function () { leaveArmed = false; }, 4000); return false; }
@@ -356,7 +372,8 @@
       ST.editing ? null : el("div", { class: "seg", role: "tablist", "aria-label": "Vista" }, [
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "entreno"), class: UI.view === "entreno" ? "on" : "", text: "Entreno", onclick: function () { UI.view = "entreno"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "volumen"), class: UI.view === "volumen" ? "on" : "", text: "Volumen", onclick: function () { UI.view = "volumen"; render(); } }),
-        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "progresion"), class: UI.view === "progresion" ? "on" : "", text: "Progresión", onclick: function () { UI.view = "progresion"; render(); } })
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "progresion"), class: UI.view === "progresion" ? "on" : "", text: "Progresión", onclick: function () { UI.view = "progresion"; render(); } }),
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "nutri"), class: UI.view === "nutri" ? "on" : "", text: "Nutrición", onclick: function () { UI.view = "nutri"; render(); } })
       ])
     ]);
   }
