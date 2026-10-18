@@ -157,7 +157,7 @@ function altaSteps(c){
  const x=calc(c);const q=c.cuestionario||{};const de=c.dietaExt||{};
  const hasProp=c.dayTypes.some(t=>t.prop.some(m=>m[1].length));
  const S=[
-  ["Entrevista inicial",true,`Hecha el ${fmtD(c.entrevistaFecha||TODAY)}.`],
+  ["Entrevista inicial",!!c.entrevistaFecha,c.entrevistaFecha?`Validada el ${fmtD(c.entrevistaFecha)}.`:(c.entrevistaCli&&c.entrevistaCli.estado==="enviada")?"La ha enviado: pendiente de tu revisión.":"Aún no la ha rellenado. Le sale como primera tarea al entrar en su app."],
   ["Cuestionario de alimentación",q.estado!=="pendiente",q.estado==="pendiente"?"El cliente aún no lo ha rellenado. Le aparece como primera tarea al entrar.":q.estado==="enviado"?"Enviado. Falta convertirlo en sus comidas.":"Convertido en sus comidas habituales."],
   ["Dieta propia",de.estado==="ninguna"?(q.resp&&q.resp.dieta==="si"?false:true):de.estado==="validada",de.estado==="ninguna"?(q.resp&&q.resp.dieta==="si"?"Dice que trae dieta pero aún no la ha subido.":"No trae dieta propia."):de.estado==="revision"?"Recibida: pendiente de tu validación.":de.estado==="recibida"?"Recibida: falta transcribirla.":`Validada el ${fmtD(de.validada||TODAY)}.`],
   ["Calibración (14 días de peso)",x.daysLogged>=14,`${Math.min(x.daysLogged,14)}/14 días.`],
@@ -314,12 +314,12 @@ const WSTEPS=[
 
 /* ======================= INTEGRACIÓN CON LA WEB (Supabase) ======================= */
 const PLAN_KEYS=["sexo","edad","altura","grasa","fase","exp","dias","hora","dur","pasos","pasosMin","sueno","lacteos","diasEnt","trabajo","entrevista","entrevistaFecha","dayTypes","reglas","kcalAprobadas","dietaVal","pesoInicial"];
-const CLI_KEYS=["pesos","perim","fotos","cuestionario","dietaSub","eventos","checkins","pasosBajos","ciclo"];
+const CLI_KEYS=["pesos","perim","fotos","cuestionario","dietaSub","eventos","checkins","pasosBajos","ciclo","entrevistaCli"];
 const defDay=()=>[["Desayuno",[]],["Comida",[]],["Merienda",[]],["Cena",[]]];
 function defaults(){return{sexo:"h",edad:30,altura:170,grasa:null,fase:"mantenimiento",exp:0,dias:3,hora:"",dur:60,pasos:7000,pasosMin:5000,sueno:7,lacteos:true,diasEnt:[0,2,4],
  trabajo:{},entrevista:{},entrevistaFecha:null,dayTypes:[{id:"tipo",nombre:"Día tipo",dias:7,actual:defDay(),prop:defDay()}],reglas:{...REGLAS0},kcalAprobadas:null,dietaVal:null,pesoInicial:null,
  pesos:[],perim:[],fotos:{},cuestionario:{estado:"pendiente",comidas:MEALQ.map(([n,on])=>({nombre:n,on,hora:"",texto:""})),resp:{}},dietaSub:null,eventos:[],checkins:{},pasosBajos:{},ciclo:null,
- ajustes:[],flags:[],registros:[]}}
+ entrevistaCli:null,ajustes:[],flags:[],registros:[]}}
 function derive(c){
  c.pesos.sort((a,b)=>a[0]<b[0]?-1:1);
  c.peso=c.pesos.length?c.pesos[c.pesos.length-1][1]:(c.pesoInicial||70);
@@ -381,8 +381,12 @@ const hasPlan=c=>c.dayTypes.some(t=>t.prop.some(m=>m[1].length));
 const TABS=[["resumen","Resumen"],["alta","Alta y dieta"],["semana","Semana"],["plan","Comidas base"],["seg","Seguimiento"],["entrevista","Entrevista"]];
 function coachHTML(c){
  if(S.wiz)return wizardHTML();
- if(!c.entrevistaFecha)return `<div class="npanel"><h2>Nutrición de ${esc(c.nombre)}</h2><p class="nmuted">Aún no tiene la entrevista inicial. Hazla en persona o por videollamada: son unos 10 minutos y con eso se calcula todo.</p>
-  <button class="btn primary wide" data-act="wizstart">Hacer entrevista inicial</button>
+ const ec=c.entrevistaCli||{};
+ if(!c.entrevistaFecha)return `<div class="npanel"><h2>Nutrición de ${esc(c.nombre)}</h2>
+  ${ec.estado==="enviada"?`<div class="ntask hot"><div><b>Ha enviado su entrevista inicial</b><span>El ${fmtD(ec.fecha||TODAY)}. Revísala, corrige lo que haga falta, añade una nota si quieres y valídala.</span></div><span></span></div>
+   <button class="btn primary wide" data-act="wizreview">Revisar y validar</button>`
+  :`<p class="nmuted">${ec.estado==="borrador"?"Ha empezado la entrevista inicial en su app, pero aún no la ha enviado.":"Aún no ha rellenado la entrevista inicial. Le sale como primera tarea al entrar en su app."} Cuando la envíe, te llegará aquí para validarla.</p>
+   <button class="btn ghost wide" data-act="wizstart">Rellenarla yo</button>`}
   ${c.cuestionario.estado!=="pendiente"?'<p class="nsmall">✓ Ya ha rellenado su cuestionario de comida.</p>':""}
   ${c.dietaExt.estado!=="ninguna"?'<p class="nsmall">✓ Ya ha subido su dieta. La revisas en «Alta y dieta» después de la entrevista.</p>':""}</div>`;
  const A=alerts(c);const nBad=A.filter(a=>a[0]==="bad").length;const altaN=altaSteps(c).filter(s=>!s[1]).length;
@@ -599,28 +603,44 @@ function entrevistaHTML(c){
   ${c.fase==="volumen"?`<label class="nf">En volumen, no compensar si el exceso es menor de<input type="number" step="50" data-rule="umbralVol" value="${c.reglas.umbralVol}"></label>`:""}</div></div>`;
 }
 /* ----- entrevista inicial (asistente) ----- */
-function wizStart(c){S.wiz={step:0,data:{nombre:c.nombre,sexo:c.sexo||"h",fase:c.fase||"mantenimiento",cicloRegular:"si",anticonceptivo:"no",diasEnt:(c.diasEnt||[0,2,4]).slice(),
- edad:c.entrevistaFecha?c.edad:"",peso:c.entrevistaFecha?c.peso:"",altura:c.entrevistaFecha?c.altura:"",grasa:c.grasa||"",...(c.trabajo||{})},files:{}};render()}
+function wizStart(c,review){const base={nombre:c.nombre,sexo:c.sexo||"h",fase:c.fase||"mantenimiento",cicloRegular:"si",anticonceptivo:"no",diasEnt:(c.diasEnt||[0,2,4]).slice(),
+ edad:c.entrevistaFecha?c.edad:"",peso:c.entrevistaFecha?c.peso:"",altura:c.entrevistaFecha?c.altura:"",grasa:c.grasa||"",...(c.trabajo||{})};
+ const ec=c.entrevistaCli;const prev=ec&&ec.data?JSON.parse(JSON.stringify(ec.data)):{};
+ S.wiz={step:0,review:!!review,client:!S.coach,data:{...base,...prev,nombre:c.nombre,_nota:(ec&&ec.nota)||""},files:{}};render()}
 function stepsFor(){return WSTEPS.filter(s=>!s.women||S.wiz.data.sexo==="m")}
 function wizardHTML(){
  const St=stepsFor(),s=St[S.wiz.step],d=S.wiz.data;
  const field=([k,l,type,extra])=>{
-  if(k==="nombre")return"";
+  if(k==="nombre"||k.startsWith("_"))return"";
   if(type==="seg")return`<div class="nwide"><span class="nk">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wseg="${k}" data-v="${v}" aria-pressed="${d[k]===v}">${t}</button>`).join("")}</div></div>`;
   if(type==="multi")return`<div class="nwide"><span class="nk">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wmulti="${k}" data-v="${v}" aria-pressed="${(d[k]||[]).includes(v)}">${t}</button>`).join("")}</div></div>`;
   if(type==="area")return`<label class="nf nwide">${l}${extra?` <small>${extra}</small>`:""}<textarea data-w="${k}">${esc(d[k])}</textarea></label>`;
   if(type==="perim")return`<div class="nwide nform">${PERIM.map(([pk,pl])=>`<label class="nf">${pl}<input type="number" inputmode="decimal" step="0.5" data-w="p_${pk}" value="${esc(d["p_"+pk])}"></label>`).join("")}</div>`;
   if(type==="fotos")return`<div class="nwide nphotos">${ANGLES.map(([ak,al])=>`<label class="nslot">${S.wiz.files[ak]?`<span>✓ ${al}</span>`:`<span>${al}<br><small>Toca para subir</small></span>`}<input type="file" accept="image/*" data-wphoto="${ak}" aria-label="Foto ${al}"></label>`).join("")}</div>`;
   return`<label class="nf">${l}${extra?` <small>${extra}</small>`:""}<input type="${type}" data-w="${k}" value="${esc(d[k])}"${type==="number"?' step="any" inputmode="decimal"':""}></label>`};
- return `<div class="npanel"><h2>Entrevista inicial · ${esc(d.nombre)}</h2><span class="nsmall nmuted">Paso ${S.wiz.step+1} de ${St.length}</span>
+ return `<div class="npanel"><h2>${S.wiz.client?"Tu entrevista inicial":S.wiz.review?"Revisar entrevista · "+esc(d.nombre):"Entrevista inicial · "+esc(d.nombre)}</h2>${S.wiz.client&&S.wiz.step===0?'<p class="nsmall nmuted">Unos 10 minutos. Con esto tu entrenador calcula tu plan de comida y entreno. Se guarda según avanzas.</p>':""}<span class="nsmall nmuted">Paso ${S.wiz.step+1} de ${St.length}</span>
   <div class="nsteps">${St.map((_,i)=>`<span class="${i<S.wiz.step?"done":i===S.wiz.step?"cur":""}"></span>`).join("")}</div>
   <h3>${s.t}</h3><div class="nform">${s.f.map(field).join("")}</div>
   ${s.t==="Trabajo y día a día"?'<div class="nnote">Con esto la web le recomienda hábitos: pausas activas si pasa muchas horas sentado, paseos tras las comidas…</div>':""}
   ${s.t==="Ciclo menstrual"?'<div class="nnote">Para comparar peso y medidas siempre en la misma fase y detectar si el plan altera el ciclo.</div>':""}
-  <div class="nrow nbetween"><button class="btn ghost" type="button" data-wnav="-1">${S.wiz.step?"← Atrás":"Cancelar"}</button><button class="btn primary" type="button" data-wnav="1">${S.wiz.step===St.length-1?"Guardar":"Siguiente →"}</button></div></div>`;
+  ${S.wiz.step===St.length-1&&!S.wiz.client?`<label class="nf">Nota para ${esc(d.nombre)} <small>Opcional. Se le muestra cuando valides</small><textarea data-w="_nota" placeholder="Algo que quieras explicarle o pedirle">${esc(d._nota)}</textarea></label>`:""}
+  ${S.wiz.step===St.length-1&&S.wiz.client?'<div class="nnote">Al enviarla, tu entrenador la revisa y te avisa. Si algo no lo sabes, déjalo en blanco.</div>':""}
+  <div class="nrow nbetween"><button class="btn ghost" type="button" data-wnav="-1">${S.wiz.step?"← Atrás":S.wiz.client?"Salir":"Cancelar"}</button><button class="btn primary" type="button" data-wnav="1">${S.wiz.step===St.length-1?(S.wiz.client?"Enviar a mi entrenador":S.wiz.review?"Validar":"Guardar"):"Siguiente →"}</button></div></div>`;
+}
+function wizDraft(){if(!S.wiz||!S.wiz.client)return;const d={...S.wiz.data};delete d._nota;S.c.entrevistaCli={...(S.c.entrevistaCli||{}),estado:"borrador",data:d};save("entrevistaCli")}
+async function wizClientSend(){
+ const c=S.c,d={...S.wiz.data},n=v=>parseFloat(String(v??"").replace(",","."));delete d._nota;
+ if(!n(d.peso)||!n(d.altura)||!n(d.edad)){S.wiz.step=0;render();S.flash("Necesitamos al menos tu edad, peso y altura");return}
+ if(n(d.peso)){c.pesos=c.pesos.filter(p=>p[0]!==TODAY);c.pesos.push([TODAY,n(d.peso)])}
+ const m={fecha:TODAY};let any=false;PERIM.forEach(([k])=>{const v=n(d["p_"+k]);if(v){m[k]=v;any=true}});if(any){c.perim=c.perim.filter(p=>p.fecha!==TODAY);c.perim.push(m)}
+ if(d.sexo==="m"&&d.cicloRegular!=="na"&&d.cicloInicio)c.ciclo={regular:d.cicloRegular==="si",len:n(d.cicloLen)||28,sangrado:n(d.sangrado)||5,inicio:d.cicloInicio,anticonceptivo:d.anticonceptivo==="si"};
+ const files=S.wiz.files;S.wiz=null;S.ctab="inicio";
+ for(const k of Object.keys(files)){try{const p=await upImg(files[k],`${c.id}/fotos/${TODAY}_${k}_${Date.now()}.jpg`);c.fotos[TODAY]=c.fotos[TODAY]||{};c.fotos[TODAY][k]=p}catch(e){S.flash("No se pudo subir una foto")}}
+ c.entrevistaCli={estado:"enviada",fecha:TODAY,data:d};save("entrevistaCli","pesos","perim","fotos","ciclo");render();S.flash("¡Enviada a tu entrenador!");
 }
 async function wizFinish(){
- const c=S.c,d=S.wiz.data,n=v=>parseFloat(String(v??"").replace(",","."));
+ if(S.wiz.client)return wizClientSend();
+ const c=S.c,d=S.wiz.data,n=v=>parseFloat(String(v??"").replace(",","."));const review=S.wiz.review;
  if(!n(d.peso)||!n(d.altura)||!n(d.edad)){S.wiz.step=0;render();S.flash("Faltan edad, peso o altura");return}
  const labels={};WSTEPS.forEach(s=>{if(s.women&&d.sexo!=="m")return;if(s.t==="Medidas iniciales")return;labels["§"+s.t]="";s.f.forEach(([k,l,t,ex])=>{if(k==="nombre")return;let v=d[k];if(t==="seg")v=(ex.find(e=>e[0]===v)||[,""])[1];if(t==="multi")v=(v||[]).map(i=>WD[i]).join(", ");labels[l]=v??""})});
  const de=(d.diasEnt||[]).slice().sort();
@@ -629,16 +649,18 @@ async function wizFinish(){
   trabajo:{profesion:d.profesion||"",horario:d.horario||"",modalidad:d.modalidad||"",horasSentado:n(d.horasSentado)||0,desplazamiento:d.desplazamiento||"",pausas:d.pausas||"",actividadExtra:d.actividadExtra||"",pantallas:n(d.pantallas)||0},
   entrevista:labels,entrevistaFecha:TODAY});
  if(d.sexo==="m"&&d.cicloRegular!=="na"&&d.cicloInicio)c.ciclo={regular:d.cicloRegular==="si",len:n(d.cicloLen)||28,sangrado:n(d.sangrado)||5,inicio:d.cicloInicio,anticonceptivo:d.anticonceptivo==="si"};
- c.pesos=c.pesos.filter(p=>p[0]!==TODAY);c.pesos.push([TODAY,n(d.peso)]);
- const m={fecha:TODAY};let any=false;PERIM.forEach(([k])=>{const v=n(d["p_"+k]);if(v){m[k]=v;any=true}});if(any){c.perim=c.perim.filter(p=>p.fecha!==TODAY);c.perim.push(m)}
+ if(!review||!c.pesos.length){c.pesos=c.pesos.filter(p=>p[0]!==TODAY);c.pesos.push([TODAY,n(d.peso)])}
+ const m={fecha:TODAY};let any=false;PERIM.forEach(([k])=>{const v=n(d["p_"+k]);if(v){m[k]=v;any=true}});if(any&&(!review||!c.perim.length)){c.perim=c.perim.filter(p=>p.fecha!==TODAY);c.perim.push(m)}
+ const dd={...d};delete dd._nota;c.entrevistaCli={...(c.entrevistaCli||{}),estado:"validada",validada:TODAY,data:dd,nota:(d._nota||"").trim()};
  const files=S.wiz.files;S.wiz=null;S.tab="alta";
  for(const k of Object.keys(files)){try{const p=await upImg(files[k],`${c.id}/fotos/${TODAY}_${k}_${Date.now()}.jpg`);c.fotos[TODAY]=c.fotos[TODAY]||{};c.fotos[TODAY][k]=p}catch(e){S.flash("No se pudo subir una foto")}}
- save(...PLAN_KEYS,"pesos","perim","fotos","ciclo");render();S.flash("Entrevista guardada");
+ save(...PLAN_KEYS,"pesos","perim","fotos","ciclo","entrevistaCli");render();S.flash(review?"Entrevista validada":"Entrevista guardada");
 }
 
 /* ---------- CLIENTE ---------- */
 const CT=[["inicio","Inicio"],["comida","Mi comida"],["dieta","Mi dieta"],["hoy","Hoy"],["medidas","Medidas"]];
 function clientHTML(c){
+ if(S.wiz)return wizardHTML();
  const body={inicio:cInicio,comida:cComida,dieta:cDieta,hoy:cHoy,medidas:cMedidas}[S.ctab](c);
  return `<div class="ntabs" role="tablist">${CT.map(([k,l])=>`<button type="button" role="tab" data-ctab="${k}" aria-selected="${S.ctab===k}">${l}</button>`).join("")}</div><span id="nsync" class="nsmall nmuted"></span>${body}`;
 }
@@ -648,13 +670,16 @@ function cInicio(c){
  if(q.resp.dieta==="si"&&de.estado==="ninguna")T.push(["hot","Pásanos la dieta que ya sigues","Una foto, una captura o el texto. Tu entrenador la revisa.","dieta","Subir"]);
  if(de.estado==="recibida"||de.estado==="revision")T.push(["","Tu entrenador está revisando tu dieta","Te avisamos cuando esté validada.",null,null]);
  if(de.estado==="validada")T.push(["","Tu dieta está validada","Mira qué ha cambiado y por qué.","dieta","Ver"]);
- if(!c.entrevistaFecha)T.push(["","Entrevista inicial pendiente","Tu entrenador la hará contigo para calcular tu plan.",null,null]);
+ const ec=c.entrevistaCli||{};
+ if(!c.entrevistaFecha&&ec.estado!=="enviada")T.unshift(["hot",ec.estado==="borrador"?"Termina tu entrevista inicial":"Rellena tu entrevista inicial","Unos 10 minutos. Es lo primero: con esto se calcula tu plan.","_wiz",ec.estado==="borrador"?"Seguir":"Empezar"]);
+ if(!c.entrevistaFecha&&ec.estado==="enviada")T.unshift(["","Tu entrenador está revisando tu entrevista","Te avisamos cuando esté validada.",null,null]);
+ if(c.entrevistaFecha&&ec.nota&&diffD(ec.validada||TODAY,TODAY)<=14)T.unshift(["","Tu entrevista está validada","De tu entrenador: "+ec.nota,null,null]);
  const lp=c.perim[c.perim.length-1];if(c.entrevistaFecha&&(!lp||diffD(lp.fecha,TODAY)>=30))T.push(["","Toca medirse este mes","Perímetros (brazos y muslos derecho e izquierdo) y 3 fotos."+(c.ciclo?" Mejor entre los días 5 y 10 de tu ciclo.":""),"medidas","Ir"]);
  const ws=weekStart(TODAY);const ci=c.checkins[ws];
  const hoyP=c.pesos.some(p=>p[0]===TODAY);const H=habitos(c);
  let dia="";if(hasPlan(c)){const{d}=dayCtx(c,TODAY);dia=`<div class="npanel"><h2>Tu día</h2><div class="nkpis"><div><span class="nk">Calorías</span><span class="nv">${r0(d.m.k)}</span><span class="ns">${d.train?"día de entreno":"día de descanso"}</span></div><div><span class="nk">Proteína</span><span class="nv">${r0(d.m.P)} g</span><span class="ns">en ${d.meals.length} comidas</span></div></div>
   ${d.act.map(a=>`<div class="ntask hot"><div><b>Hoy toca: ${esc(a.txt)}</b><span>${esc(a.det)}</span></div><span></span></div>`).join("")}<button class="btn ghost wide" data-ctab="hoy">Ver mis comidas de hoy</button></div>`}
- return `<div class="npanel"><h2>Para hoy</h2>${T.map(([cl,t,s,go,b])=>`<div class="ntask ${cl}"><div><b>${t}</b><span>${s}</span></div>${go?`<button class="btn primary small" data-ctab="${go}">${b}</button>`:"<span></span>"}</div>`).join("")}
+ return `<div class="npanel"><h2>Para hoy</h2>${T.map(([cl,t,s,go,b])=>`<div class="ntask ${cl}"><div><b>${t}</b><span>${s}</span></div>${go?(go==="_wiz"?`<button class="btn primary small" data-act="wizstart">${b}</button>`:`<button class="btn primary small" data-ctab="${go}">${b}</button>`):"<span></span>"}</div>`).join("")}
   ${hoyP?'<p class="nsmall nmuted">Peso de hoy apuntado ✓</p>':`<form class="nrow" data-form="peso"><input type="hidden" name="fecha" value="${TODAY}"><label class="nf" style="flex:1 1 140px">Tu peso de hoy, en ayunas (kg)<input type="number" inputmode="decimal" step="0.1" min="30" max="250" name="peso" required></label><button class="btn primary small" type="submit" style="align-self:end">Guardar</button></form>`}</div>
  ${dia}
  ${c.entrevistaFecha?`<div class="npanel"><h2>Check-in de la semana</h2>${ci?'<p class="nsmall nmuted">Hecho ✓. ¡Gracias!</p>':`<p class="nsmall nmuted">1 minuto. Sirve para ajustar tu plan.</p>
@@ -720,7 +745,7 @@ function onClick(e){
  if(ds.approve!==undefined){const v=+ds.approve;c.kcalAprobadas=v>0?v:null;save("kcalAprobadas");render();S.flash(v>0?`Aprobado: ${v} kcal/día de media`:"Plan base restaurado");return}
  if(ds.wseg){collectWiz();S.wiz.data[ds.wseg]=ds.v;render();return}
  if(ds.wmulti){collectWiz();const v=+ds.v;const a=S.wiz.data[ds.wmulti]||[];S.wiz.data[ds.wmulti]=a.includes(v)?a.filter(x=>x!==v):[...a,v];render();return}
- if(ds.wnav){collectWiz();const St=stepsFor();const s=S.wiz.step+ +ds.wnav;if(s<0){S.wiz=null;render();return}if(s>=St.length){wizFinish();return}S.wiz.step=s;render();window.scrollTo(0,0);return}
+ if(ds.wnav){collectWiz();const St=stepsFor();const s=S.wiz.step+ +ds.wnav;if(s<0){wizDraft();S.wiz=null;render();return}if(s>=St.length){wizFinish();return}S.wiz.step=s;wizDraft();render();window.scrollTo(0,0);return}
  if(ds.cqseg){c.cuestionario.resp[ds.cqseg]=ds.v;save("cuestionario");render();return}
  if(ds.addmeal){const ms=getMeals(c,ds.addmeal);const nm=["Desayuno","Media mañana","Post-entreno","Comida","Merienda","Cena","Recena"].find(x=>!ms.some(m=>m[0]===x))||"Comida extra";ms.push([nm,[["pollo",100]]]);saveMeals(ds.addmeal);render();return}
  if(ds.additem){const[k,mi]=ds.additem.split(",");path(c,k,+mi)[1].push(["pollo",100]);saveMeals(k);render();return}
@@ -728,7 +753,8 @@ function onClick(e){
  if(ds.del){const[k,mi,ii]=ds.del.split(",");path(c,k,+mi)[1].splice(+ii,1);saveMeals(k);render();return}
  if(ds.lock){const[k,mi,ii]=ds.lock.split(",");const it=path(c,k,+mi)[1][+ii];it[2]=it[2]?0:1;saveMeals(k);render();return}
  const act=ds.act;if(!act)return;
- if(act==="wizstart"){wizStart(c);window.scrollTo(0,0);return}
+ if(act==="wizstart"){wizStart(c,false);window.scrollTo(0,0);return}
+ if(act==="wizreview"){wizStart(c,true);window.scrollTo(0,0);return}
  if(act==="qedit"){S.qedit=true;render();return}
  if(act==="qsend"){const q=c.cuestionario;if(!q.comidas.some(m=>m.on&&m.texto.trim())){S.flash("Cuéntanos al menos una comida");return}
   q.estado=q.estado==="convertido"?"convertido":"enviado";q.fecha=TODAY;S.qedit=false;save("cuestionario");S.ctab=q.resp.dieta==="si"&&c.dietaExt.estado==="ninguna"?"dieta":"inicio";render();S.flash(S.ctab==="dieta"?"¡Gracias! Ahora pásanos tu dieta":"¡Enviado a tu entrenador!");return}
