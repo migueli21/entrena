@@ -1,0 +1,252 @@
+[
+ {
+  "slug": "mito-agujetas",
+  "label": "MITOS DEL GIMNASIO · AGUJETAS",
+  "slides": [
+   {
+    "type": "cover",
+    "h": "Las agujetas no significan que hayas entrenado [bien.]",
+    "sub": "Lo explica un biomecánico."
+   },
+   {
+    "type": "text",
+    "h": "¿Te mides por [lo que te duele?]",
+    "sub": "Muchos miden su entrenamiento por las agujetas del día siguiente. Pero el dolor no demuestra que hayas progresado."
+   },
+   {
+    "type": "text",
+    "h": "Aparecen con [lo nuevo]",
+    "sub": "Salen sobre todo cuando haces algo nuevo o a lo que no estás acostumbrado. Cuanto más constante eres, menos aparecen."
+   },
+   {
+    "type": "text",
+    "h": "Sin agujetas también [progresas]",
+    "sub": "Si al día siguiente no te duele nada, no pasa nada. Puedes estar mejorando igual."
+   },
+   {
+    "type": "checks",
+    "h": "La señal que [sí importa]",
+    "sub": "Hacer hoy un poco más que hace unas semanas:",
+    "items": [
+     "Una repetición más",
+     "Un poco más de peso",
+     "Mejor técnica"
+    ]
+   },
+   {
+    "type": "table",
+    "save": true,
+    "h": "Tu progresión en [4 semanas]",
+    "sub": "Ejemplo: sentadilla goblet",
+    "rows": [
+     [
+      "Semana 1",
+      "3 × 8",
+      "10 kg"
+     ],
+     [
+      "Semana 2",
+      "3 × 10",
+      "10 kg"
+     ],
+     [
+      "Semana 3",
+      "3 × 12",
+      "10 kg"
+     ],
+     [
+      "Semana 4",
+      "3 × 8",
+      "12 kg*"
+     ]
+    ],
+    "note": "Primero sumas repeticiones. Al llegar a 12, subes el peso y vuelves a 8."
+   },
+   {
+    "type": "text",
+    "h": "Si no lo apuntas, [no lo sabes]",
+    "sub": "Ejercicio, repeticiones y peso. En cada sesión.",
+    "shot": "app-ciclo.png",
+    "hint": "Algo estamos preparando…"
+   },
+   {
+    "type": "close",
+    "main": "Guárdalo para tu próximo entrenamiento.",
+    "next": "Viernes: ¿las sentadillas destrozan las rodillas?"
+   }
+  ]
+ },
+ {
+  "slug": "mito-sentadilla",
+  "label": "MITOS DEL GIMNASIO · SENTADILLA",
+  "slides": [
+   {
+    "type": "cover",
+    "h": "Las sentadillas no te destrozan las [rodillas.]",
+    "sub": "Lo explica un biomecánico."
+   },
+   {
+    "type": "text",
+    "h": "Bien hecha, [te fortalece]",
+    "sub": "Con buena técnica y una carga adecuada, la sentadilla es uno de los mejores ejercicios para tus piernas y tus rodillas."
+   },
+   {
+    "type": "text",
+    "h": "La rodilla puede [pasar la punta del pie]",
+    "sub": "No es peligroso por sí solo. Es normal en muchas personas, según sus proporciones."
+   },
+   {
+    "type": "text",
+    "h": "Si te molesta, el motivo suele estar [en otro sitio]",
+    "sub": "Tobillo, cadera o control del tronco. Vamos a descubrirlo con un test."
+   },
+   {
+    "type": "steps",
+    "save": true,
+    "h": "Hazte el [test]",
+    "items": [
+     "Pies a la anchura de los hombros",
+     "Brazos estirados por encima de la cabeza",
+     "Baja lento, sin peso, hasta donde puedas",
+     "Grábate de frente y de lado"
+    ]
+   },
+   {
+    "type": "diag",
+    "save": true,
+    "h": "¿Qué [ves?]",
+    "items": [
+     [
+      "Se levantan los talones",
+      "Movilidad de tobillo"
+     ],
+     [
+      "Las rodillas se van hacia dentro",
+      "Control de cadera y glúteo"
+     ],
+     [
+      "Te inclinas mucho hacia delante",
+      "Tobillo o cadera"
+     ],
+     [
+      "Se redondea la espalda al bajar",
+      "Movilidad de cadera o control del tronco"
+     ]
+    ]
+   },
+   {
+    "type": "steps",
+    "h": "Test extra: [tobillo]",
+    "items": [
+     "Pie a un palmo de la pared",
+     "Lleva la rodilla a tocarla",
+     "Sin levantar el talón"
+    ],
+    "note": "Si no llegas, ahí tienes una pista.",
+    "small": "Es orientativo. Si sientes dolor, consulta con un profesional."
+   },
+   {
+    "type": "close",
+    "main": "Guárdalo y hazte el test hoy.",
+    "next": "Domingo: ¿cuántos días necesitas entrenar de verdad?"
+   }
+  ]
+ },
+ {
+  "slug": "mito-frecuencia",
+  "label": "MITOS DEL GIMNASIO · FRECUENCIA",
+  "slides": [
+   {
+    "type": "cover",
+    "h": "No necesitas entrenar [5 días] para ver resultados.",
+    "sub": "Lo explica un biomecánico."
+   },
+   {
+    "type": "text",
+    "h": "«No tengo tiempo» es [la excusa más común]",
+    "sub": "Muchas personas no empiezan porque creen que tienen que entrenar todos los días."
+   },
+   {
+    "type": "text",
+    "h": "Con 2 o 3 días [puedes progresar]",
+    "sub": "Bien planificados, dan para mucho.",
+    "shot": "app-entreno.png",
+    "shotw": 330,
+    "hint": "Muy pronto…"
+   },
+   {
+    "type": "text",
+    "h": "La clave no son [los días]",
+    "sub": "Es entrenar todo el cuerpo en cada sesión y ser constante semana tras semana."
+   },
+   {
+    "type": "cols",
+    "save": true,
+    "h": "Semana tipo: [2 días]",
+    "cols": [
+     {
+      "t": "DÍA A",
+      "items": [
+       "Sentadilla",
+       "Flexiones",
+       "Remo",
+       "Plancha"
+      ]
+     },
+     {
+      "t": "DÍA B",
+      "items": [
+       "Peso muerto rumano",
+       "Press de hombros",
+       "Jalón al pecho",
+       "Zancadas"
+      ]
+     }
+    ]
+   },
+   {
+    "type": "cal",
+    "save": true,
+    "h": "Semana tipo: [3 días]",
+    "weeks": [
+     [
+      "Semana 1",
+      [
+       "A",
+       "-",
+       "B",
+       "-",
+       "A",
+       "-",
+       "-"
+      ]
+     ],
+     [
+      "Semana 2",
+      [
+       "B",
+       "-",
+       "A",
+       "-",
+       "B",
+       "-",
+       "-"
+      ]
+     ]
+    ],
+    "note": "Alternas los días A y B. Deja un día de descanso entre sesiones si puedes."
+   },
+   {
+    "type": "text",
+    "h": "Mejor 2 días todo el año que [5 durante tres semanas]",
+    "sub": "Combínalo con la progresión del miércoles y ya tienes un plan completo."
+   },
+   {
+    "type": "close",
+    "main": "Guárdalo y elige tus días.",
+    "next": "Descansa. Muévete. Come sin complicarte.<br>Y entrena con cabeza.",
+    "note": "¿Te ayudo? Escríbeme «QUIERO EMPEZAR»."
+   }
+  ]
+ }
+]
