@@ -330,6 +330,8 @@
     kids.push(header());
     if (UI.view === "nutri" && !ST.editing) {
       kids.push(nutriView());
+    } else if (UI.view === "segui" && !ST.editing) {
+      kids.push(seguiView());
     } else if (UI.view === "volumen" && !ST.editing) {
       kids.push(nav(true)); kids.push(volumeView());
     } else if (UI.view === "progresion" && !ST.editing) {
@@ -353,12 +355,16 @@
       }
       kids.push(main);
     }
-    if (ST.mode === "entrenador" && !(UI.view === "nutri" && !ST.editing)) kids.push(coachBar());
+    if (ST.mode === "entrenador" && !((UI.view === "nutri" || UI.view === "segui") && !ST.editing)) kids.push(coachBar());
     shell(kids);
   }
   function nutriView() {
     if (!window.EYLNutri || !api.sb) return el("p", { class: "err", text: "No se pudo cargar la nutrición. Recarga la página." });
     return window.EYLNutri.view({ sb: api.sb, coach: ST.mode === "entrenador", client: ST.client, flash: flash });
+  }
+  function seguiView() {
+    if (!window.EYLSegui || !api.sb) return el("p", { class: "err", text: "No se pudo cargar el control. Recarga la página." });
+    return window.EYLSegui.view({ sb: api.sb, coach: ST.mode === "entrenador", client: ST.client, flash: flash });
   }
   var leaveArmed = false;
   function confirmLeave() { if (leaveArmed) { leaveArmed = false; return true; } leaveArmed = true; flash("Tienes cambios sin guardar. Pulsa otra vez para salir sin guardar."); setTimeout(function () { leaveArmed = false; }, 4000); return false; }
@@ -373,7 +379,8 @@
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "entreno"), class: UI.view === "entreno" ? "on" : "", text: "Entreno", onclick: function () { UI.view = "entreno"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "volumen"), class: UI.view === "volumen" ? "on" : "", text: "Volumen", onclick: function () { UI.view = "volumen"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "progresion"), class: UI.view === "progresion" ? "on" : "", text: "Progresión", onclick: function () { UI.view = "progresion"; render(); } }),
-        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "nutri"), class: UI.view === "nutri" ? "on" : "", text: "Nutrición", onclick: function () { UI.view = "nutri"; render(); } })
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "nutri"), class: UI.view === "nutri" ? "on" : "", text: "Nutrición", onclick: function () { UI.view = "nutri"; render(); } }),
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "segui"), class: UI.view === "segui" ? "on" : "", text: "Control", onclick: function () { UI.view = "segui"; render(); } })
       ])
     ]);
   }
