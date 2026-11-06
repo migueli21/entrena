@@ -238,6 +238,12 @@
           if (loc && (!rem || (loc.editado || 0) > (rem.editado || 0))) { ST.LOG[k] = loc; queueSave(k); }
         });
       }
+      if (!asCoach && !ST.intakeSkip && window.EYLNutri && api.sb) {
+        window.EYLNutri.intakeCheck({ sb: api.sb, client: c }).then(function (need) {
+          if (need) intakeScreen(c); else { ST.intakeSkip = true; openClient(c, false); }
+        });
+        return;
+      }
       if (!ST.PLAN) {
         if (asCoach) { noPlanScreen(); }
         else { shell([topbar(), el("header", { class: "top" }, [el("div", { class: "logo", role: "img", "aria-label": "Entrena Your Life" }), el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: "Entrena Your Life" })]), el("h1", { text: c.nombre || "Hola" }), el("p", { class: "goal", text: "Tu entreno está en camino. Mientras, empieza por la nutrición." })]), nutriView()]); }
@@ -246,6 +252,11 @@
       if (UI.w == null || UI.w >= ST.PLAN.semanas.length) UI.w = currentWeek();
       render();
     }).catch(function (x) { shell([topbar(), el("p", { class: "err", text: errMsg(x) })]); });
+  }
+  function intakeScreen(c) {
+    shell([topbar(),
+      el("header", { class: "top" }, [el("div", { class: "logo", role: "img", "aria-label": "Entrena Your Life" }), el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: "Entrena Your Life" })]), el("h1", { text: "Hola" })]),
+      window.EYLNutri.view({ sb: api.sb, coach: false, client: c, flash: flash, onDone: function () { ST.intakeSkip = true; openClient(c, false); } })]);
   }
   function noPlanScreen() {
     var others = ST.clients.filter(function (c) { return c.id !== ST.clientId && ST.plans[c.id]; });
@@ -342,6 +353,7 @@
       var main = el("main", { class: "day" + (ST.readOnly ? " ro" : "") });
       if (ST.editing) main.appendChild(editDayHead(d));
       else main.appendChild(dateRow());
+      if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = "nutri"; render(); window.scrollTo(0, 0); } }));
       if (!d.ej.length && !ST.editing) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
       d.ej.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
       if (ST.editing) {
@@ -370,11 +382,13 @@
   function confirmLeave() { if (leaveArmed) { leaveArmed = false; return true; } leaveArmed = true; flash("Tienes cambios sin guardar. Pulsa otra vez para salir sin guardar."); setTimeout(function () { leaveArmed = false; }, 4000); return false; }
 
   function header() {
-    return el("header", { class: "top" }, [
+    return el("header", { class: "top withseg" }, [
       el("div", { class: "logo", role: "img", "aria-label": "Logo de Entrena Your Life" }),
-      el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: ST.mode === "entrenador" ? (ST.readOnly && !ST.editing ? "Viendo registros" : "Editando pauta") : "Entrena Your Life" })]),
-      el("h1", { text: ST.PLAN.cliente || (ST.client && ST.client.nombre) || "Tu entreno" }),
-      ST.PLAN.objetivo ? el("p", { class: "goal", text: ST.PLAN.objetivo }) : null,
+      el("div", { class: "tophead" }, [
+        el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: ST.mode === "entrenador" ? (ST.readOnly && !ST.editing ? "Viendo registros" : "Editando pauta") : "Entrena Your Life" })]),
+        el("h1", { text: ST.PLAN.cliente || (ST.client && ST.client.nombre) || "Tu entreno" }),
+        ST.PLAN.objetivo ? el("p", { class: "goal", text: ST.PLAN.objetivo }) : null
+      ]),
       ST.editing ? null : el("div", { class: "seg", role: "tablist", "aria-label": "Vista" }, [
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "entreno"), class: UI.view === "entreno" ? "on" : "", text: "Entreno", onclick: function () { UI.view = "entreno"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "volumen"), class: UI.view === "volumen" ? "on" : "", text: "Volumen", onclick: function () { UI.view = "volumen"; render(); } }),

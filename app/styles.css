@@ -121,6 +121,12 @@ td small{font-family:var(--num);font-size:11px;color:var(--muted);display:block}
 
 .logo{position:absolute;top:4px;right:0;width:100px;height:100px;border-radius:50%;background:#fff center/cover no-repeat;box-shadow:0 0 0 2px var(--surface2)}
 @media (max-width:380px){.logo{width:84px;height:84px}.top{padding-right:94px}}
+.top.withseg{padding-right:0;min-height:0}
+.tophead{padding-right:112px;min-height:112px}
+.top.withseg .seg{display:flex;width:100%;box-sizing:border-box}
+.top.withseg .seg button{flex:1 1 auto;min-width:0;padding-inline:6px;white-space:nowrap}
+@media (max-width:380px){.tophead{padding-right:94px;min-height:96px}.top.withseg .seg button{font-size:15px;padding-inline:4px}}
+@media (max-width:340px){.top.withseg .seg button{font-size:13px;padding-inline:2px;letter-spacing:0}}
 
 .auth{min-height:70vh;display:grid;align-content:center;gap:16px;max-width:420px;margin:0 auto}
 .auth .logo.big{position:static;width:140px;height:140px;margin:0 auto}

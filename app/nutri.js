@@ -54,8 +54,50 @@ let PHOTOS={};
 /* ======================= MOTOR DE CÁLCULO ======================= */
 function macros(meals){let k=0,P=0,C=0,F=0;meals.forEach(m=>{(m[1]||[]).forEach(([id,g])=>{const f=FOODS[id];if(!f)return;k+=f[1]*g/100;P+=f[2]*g/100;C+=f[3]*g/100;F+=f[4]*g/100});if(m[2]){k+=m[2].kcal;P+=m[2].P;C+=m[2].C;F+=m[2].F}});return{k,P,C,F}}
 function weekAvg(c,key){const t=c.dayTypes.reduce((s,d)=>s+d.dias,0)||7;const a={k:0,P:0,C:0,F:0};c.dayTypes.forEach(d=>{const m=macros(d[key]);for(const x in a)a[x]+=m[x]*d.dias/t});return a}
-function cycleDay(c,date){if(!c.ciclo||!c.ciclo.inicio)return null;const L=c.ciclo.len||28;return((diffD(c.ciclo.inicio,date)%L)+L)%L+1}
-function cyclePhase(c,d){const L=c.ciclo.len||28;if(d<=(c.ciclo.sangrado||5))return["m","Regla"];if(d>L-7)return["pm","Premenstrual"];if(d<=12)return["fo","Folicular"];if(d<=15)return["ov","Ovulación"];return["lu","Lútea"]}
+/* Ciclo: el día se cuenta desde la última regla apuntada; hasta la fecha de hoy no se da la vuelta solo, para que un retraso se vea como retraso */
+function cycStarts(c){const k=c.ciclo;if(!k)return[];return[...new Set([...(k.hist||[]),k.inicio].filter(Boolean))].sort()}
+function cycleDay(c,date){if(!c.ciclo||!c.ciclo.inicio)return null;const st=cycStarts(c),L=c.ciclo.len||28;
+ let s0=null;for(const x of st)if(x<=date)s0=x;
+ if(s0===null){if(c.ciclo.regular===false)return null;return((diffD(st[0],date)%L)+L)%L+1}
+ const d=diffD(s0,date)+1;
+ if(d>L&&date>TODAY&&c.ciclo.regular!==false&&!c.ciclo.anticonceptivo)return((d-1)%L)+1;
+ return d}
+function cyclePhase(c,d){if(!d)return["na",""];const k=c.ciclo,L=k.len||28,bl=k.sangrado||5;
+ if(k.anticonceptivo)return d<=bl?["m","Sangrado"]:["ac","Sin fases calculadas"];
+ if(d<=bl)return["m","Regla"];
+ if(k.regular===false)return["ir","Ciclo irregular"];
+ if(d>L)return["rt","Se retrasa"];
+ if(d>L-7)return["pm","Premenstrual"];
+ const ov=L-14;if(d<ov-1)return["fo","Folicular"];if(d<=ov+1)return["ov","Ovulación"];return["lu","Lútea"]}
+function cycMark(c,date){const k=c.ciclo;const st=[...new Set([...cycStarts(c),date])].sort();k.hist=st;k.inicio=st[st.length-1];cycLen(c)}
+function cycUnmark(c,date){const k=c.ciclo;const st=cycStarts(c).filter(x=>x!==date);if(!st.length)return false;k.hist=st;k.inicio=st[st.length-1];cycLen(c);return true}
+/* con dos ciclos completos apuntados, la duración pasa a ser la media real de los tres últimos */
+function cycLen(c){const st=cycStarts(c),g=[];for(let i=1;i<st.length;i++){const n=diffD(st[i-1],st[i]);if(n>=15&&n<=60)g.push(n)}
+ if(g.length>=2){const u=g.slice(-3);c.ciclo.len=Math.round(u.reduce((a,b)=>a+b,0)/u.length)}}
+const CYC_SINT=[["dolor","Dolor de regla"],["dolorf","Dolor fuerte"],["hinchazon","Hinchazón"],["cansancio","Cansancio"],["humor","Cambios de humor"],["cabeza","Dolor de cabeza"],["sueno","Dormí mal"],["hambre","Más hambre"]];
+const CYC_GRUPOS=[["m","Regla"],["fo","Folicular"],["ov","Ovulación"],["lu","Lútea"],["pm","Premenstrual"]];
+function cycTip(c,d,ph){const k=c.ciclo;
+ if(ph==="rt")return`Tu regla se retrasa ${d-(k.len||28)} día${d-(k.len||28)===1?"":"s"}. Márcala cuando llegue. Si se repite, coméntalo con tu entrenador.`;
+ if(ph==="ac")return"Con anticonceptivo hormonal no calculamos fases, porque dependen del método. Lo útil es apuntar cómo te sientes.";
+ if(ph==="ir")return"Con un ciclo irregular no predecimos fechas. Marca tu regla cuando llegue y apunta cómo te sientes.";
+ if(ph==="m")return"Si hoy estás peor, ajusta el cómo: baja peso o series, pero no lo dejes a cero. La báscula puede marcar más por el agua.";
+ if(ph==="pm")return"Puedes retener algo de líquido y tener más hambre. No tomes decisiones por la báscula estos días.";
+ return"Entrena como tienes pautado. Apunta cómo te sientes: en dos o tres meses veremos tu patrón."}
+function cycPattern(c){const log=c.cicloLog||{},G={};Object.keys(log).forEach(date=>{const ph=cyclePhase(c,cycleDay(c,date))[0];if(!CYC_GRUPOS.some(g=>g[0]===ph))return;const r=log[date];const g=G[ph]=G[ph]||{n:0,e:0,en:0,s:{}};g.n++;if(r.e){g.e+=r.e;g.en++}(r.s||[]).forEach(x=>{g.s[x]=(g.s[x]||0)+1})});
+ return CYC_GRUPOS.filter(([k])=>G[k]).map(([k,l])=>{const g=G[k];const top=Object.entries(g.s).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([x])=>(CYC_SINT.find(y=>y[0]===x)||[0,x])[1]);return{k,l,n:g.n,e:g.en?g.e/g.en:null,top}})}
+function cycPatternHTML(c,tu){const P=cycPattern(c);const dias=P.reduce((a,p)=>a+p.n,0);const ciclos=Math.max(0,cycStarts(c).length-1);
+ if(dias<5)return`<p class="nsmall nmuted">${tu?"Cuando lleves unos días apuntados, aquí verás tu patrón.":"Aún hay pocos días apuntados para ver un patrón."}</p>`;
+ return`<h3>${tu?"Tu patrón":"Su patrón"}</h3><div class="ntbl"><table class="nmini"><thead><tr><th>Fase</th><th>Días</th><th>Energía</th><th>Lo más frecuente</th></tr></thead><tbody>${P.map(p=>`<tr><td>${p.l}</td><td>${p.n}</td><td>${p.e===null?"—":String(r1(p.e)).replace(".",",")+" / 5"}</td><td>${p.top.map(esc).join(", ")||"—"}</td></tr>`).join("")}</tbody></table></div>
+ ${ciclos<2?'<p class="nsmall nmuted">Orientativo: el patrón se ve con dos o tres meses de datos.</p>':""}`}
+function cycHistHTML(c,del){const st=cycStarts(c).slice().reverse().slice(0,6);const g=[];const all=cycStarts(c);for(let i=1;i<all.length;i++)g.push(diffD(all[i-1],all[i]));
+ return`<h3>Últimas reglas</h3><ul class="ncychist">${st.map((x,i)=>`<li><span>${fmtD(x)}</span><span class="nmuted">${i>0&&g[g.length-i]?g[g.length-i]+" días hasta la siguiente":""}</span>${del&&all.length>1?`<button type="button" class="nlink" data-cycdel="${x}" aria-label="Quitar la regla del ${fmtD(x)}">Quitar</button>`:""}</li>`).join("")}</ul>`}
+function cycBarHTML(c,cd){const Lc=c.ciclo.len||28;return`<div class="ncycle" style="grid-template-columns:repeat(${Lc},1fr)">${Array.from({length:Lc},(_,i)=>`<i class="${cyclePhase(c,i+1)[0]}${i+1===cd?" today":""}"></i>`).join("")}</div>`}
+function cycNext(c){const k=c.ciclo;if(k.regular===false||k.anticonceptivo)return"";const n=addD(k.inicio,k.len||28);return n>=TODAY?`Próxima regla prevista: <b>${fmtD(n)}</b>.`:""}
+function cycFromInt(c,d){if(d.sexo!=="m"||d.cicloRegular==="na")return;const reg=d.cicloRegular!=="no",ac=d.anticonceptivo==="si";
+ if(c.ciclo&&c.ciclo.inicio){c.ciclo.regular=reg;c.ciclo.anticonceptivo=ac;return}
+ if(d.cicloInicio)c.ciclo={regular:reg,len:28,sangrado:5,inicio:d.cicloInicio,hist:[d.cicloInicio],anticonceptivo:ac}}
+function cycWoman(c){return c.sexo==="m"||((c.entrevistaCli||{}).data||{}).sexo==="m"}
+function cycNA(c){return((c.entrevistaCli||{}).data||{}).cicloRegular==="na"}
 function regress(pts){const n=pts.length;if(n<2)return 0;const x0=pts[0][0];let sx=0,sy=0,sxx=0,sxy=0;pts.forEach(([d,w])=>{const x=diffD(x0,d);sx+=x;sy+=w;sxx+=x*x;sxy+=x*w});return(n*sxy-sx*sy)/(n*sxx-sx*sx||1)}
 function calc(c){
  const ffm=c.grasa?c.peso*(1-c.grasa/100):null;
@@ -237,13 +279,18 @@ function habitos(c){
 }
 function alerts(c){
  const x=calc(c),A=[];
+ const ed=(c.entrevistaCli||{}).data||{};
+ if(parqSi(ed).length)A.push(["bad","PAR-Q con algún «sí»","Revísalo antes de pautar: puede necesitar valoración médica.","entrevista"]);
+ if(ed.situacion==="embarazo")A.push(["bad","Embarazo","Adapta el plan y coordina con su médico o matrona.","entrevista"]);
+ if(ed.situacion==="posparto")A.push(["warn","Posparto o lactancia","Ten en cuenta suelo pélvico, recuperación y energía.","entrevista"]);
+ if(ed.lesion==="si")A.push([parseFloat(ed.lesionDolor)>=6?"bad":"warn","Lesión o dolor al empezar",`${(ed.lesionZona||[]).join(", ")||"Sin zona"} · ${ed.lesionDolor||"?"}/10`,"entrevista"]);
  const lp=c.perim[c.perim.length-1];
  if(!lp)A.push(["bad","Faltan las medidas iniciales","Registra perímetros y fotos para tener punto de partida.","seg"]);
  else{const d=diffD(lp.fecha,TODAY);
   if(d>=30)A.push(["bad",`Medición mensual pendiente (hace ${d} días)`,"Toca medir perímetros y hacer fotos."+(c.ciclo?" Mejor entre los días 5 y 10 del ciclo.":""),"seg"]);
   else if(d>=26)A.push(["warn",`Medición mensual en ${30-d} días`,"Recuérdaselo para que tenga la cinta a mano.","seg"]);}
  const ph=PHOTOS[c.id]||{};const lastPhoto=Object.keys(ph).sort().pop();
- if(!lastPhoto||diffD(lastPhoto,TODAY)>=30)A.push(["warn","Fotos del mes sin subir","Frente, perfil y espalda, con la misma luz y a la misma hora que la vez anterior.","seg"]);
+ if(!(((c.entrevistaCli||{}).consent||{}).fotos===false)&&(!lastPhoto||diffD(lastPhoto,TODAY)>=30))A.push(["warn","Fotos del mes sin subir","Frente, perfil y espalda, con la misma luz y a la misma hora que la vez anterior.","seg"]);
  c.flags.filter(f=>diffD(f.fecha,TODAY)<=14).forEach(f=>A.push(["bad",f.titulo,f.texto,"asistente"]));
  const de=c.dietaExt||{},q=c.cuestionario||{};
  if(de.estado==="revision"||de.estado==="recibida")A.push(["bad","Dieta propia pendiente de validar",`La subió el ${fmtD(de.fecha||TODAY)}. Revísala, corrige lo necesario y envíasela validada.`,"alta"]);
@@ -260,7 +307,7 @@ function alerts(c){
  if(!c.trabajo||!c.trabajo.modalidad)A.push(["info","Falta trabajo y actividad diaria","Complétalo en Entrevista para generar recomendaciones de hábitos (pausas, paseos…).","entrevista"]);
  if(c.sueno<7)A.push(["warn",`Duerme ${c.sueno} h`,"Menos de 7 h empeora la recuperación y la síntesis de proteína muscular.","resumen"]);
  if(c.ciclo){const cd=cycleDay(c,TODAY),[ph2]=cyclePhase(c,cd);
-  if(diffD(c.ciclo.inicio,TODAY)>c.ciclo.len+5)A.push(["bad","Retraso de la regla",`Han pasado ${diffD(c.ciclo.inicio,TODAY)} días desde el último inicio. Revisa déficit y estrés; si se repite, derivar al ginecólogo.`,"seg"]);
+  if(!c.ciclo.anticonceptivo&&diffD(c.ciclo.inicio,TODAY)>(c.ciclo.regular===false?45:c.ciclo.len+5))A.push(["bad","Retraso de la regla",`Han pasado ${diffD(c.ciclo.inicio,TODAY)} días desde la última regla apuntada. Confirma que la tiene al día; si es real, revisa déficit y estrés y, si se repite, derivar al ginecólogo.`,"seg"]);
   if(ph2==="pm")A.push(["info","Semana premenstrual","Puede retener líquidos: no tomar decisiones por la báscula estos días.","seg"]);
   if(x.ea!==null&&x.ea<30)A.push(["bad",`Disponibilidad energética baja: ${r0(x.ea)} kcal/kg magra`,"Riesgo de alteraciones del ciclo. Subir calorías.","plan"]);
   if(!c.lacteos)A.push(["info","Sin lácteos: vigilar calcio","Bebida vegetal enriquecida en calcio, almendras, legumbres, tofu o sardinas.","plan"]);}
@@ -287,6 +334,7 @@ function chart(c){
 }
 const CQ=[["fuera","¿Cuántas veces comes fuera a la semana?","seg",[["0","Casi nunca"],["1","1"],["2-3","2–3"],["4+","4 o más"]]],
  ["finde","¿Qué cambia el fin de semana?","area","Horarios, comidas fuera, alcohol…"],
+ ["intentos","¿Has hecho dietas antes? ¿Cómo te fue?","area"],
  ["noNeg","Lo que no quieres quitar por nada","area","Tu café con leche, el chocolate de después de comer…"],
  ["noGusta","Lo que no te gusta, no comes o te sienta mal","area"],
  ["cocina","¿Quién cocina en casa?","seg",[["yo","Yo"],["otro","Pareja o familia"],["compro","Compro hecho"]]],
@@ -301,24 +349,52 @@ const CQ=[["fuera","¿Cuántas veces comes fuera a la semana?","seg",[["0","Casi
  ["dieta","¿Ya tienes una dieta que quieras seguir?","seg",[["no","No"],["si","Sí, te la paso"]]]];
 const qVal=(k,v)=>{const q=CQ.find(x=>x[0]===k);if(q&&q[2]==="seg"){const o=q[3].find(o=>o[0]===v);return o?o[1]:v}return v};
 const TRAB=[["profesion","Profesión","text"],["horario","Horario laboral","text"],["modalidad","Cómo trabaja","sel",[["oficina","Sentado en oficina"],["teletrabajo","Teletrabajo"],["mixto","Mixto"],["pie","De pie"],["fisico","Trabajo físico"]]],["horasSentado","Horas sentado al día (total)","number"],["desplazamiento","Desplazamiento","sel",[["coche","Coche"],["transporte","Transporte público"],["andando","Andando"],["bici","Bici"]]],["pausas","¿Puede levantarse en el trabajo?","sel",[["si","Sí"],["aveces","A veces"],["no","No"]]],["actividadExtra","Otra actividad diaria","text"],["pantallas","Horas de pantalla fuera del trabajo","number"]];
+/* Entrevista inicial: pensada para unos 6 minutos, casi todo con un toque. Cada campo: clave, pregunta, tipo, opciones, condición.
+   cli: solo la ve el cliente. nuevo: también se la pedimos a quien ya tenía entrevista hecha. req: lo que falta para poder seguir. */
+const SN=[["no","No"],["si","Sí"]];
+const PARQ=[["pq1","¿Te ha dicho un médico que tienes un problema de corazón y que solo debes hacer la actividad que él te indique?"],["pq2","¿Sientes dolor en el pecho al hacer actividad física?"],["pq3","En el último mes, ¿has tenido dolor en el pecho sin estar haciendo actividad física?"],["pq4","¿Pierdes el equilibrio por mareos o has perdido alguna vez el conocimiento?"],["pq5","¿Tienes algún problema de huesos o articulaciones que pueda empeorar con el ejercicio?"],["pq6","¿Tomas medicación recetada para la tensión o el corazón?"],["pq7","¿Conoces alguna otra razón por la que no debas hacer actividad física?"]];
+const ZONAS_L=["Cuello","Hombro","Codo o muñeca","Espalda alta","Lumbar","Cadera","Rodilla","Tobillo o pie","Otra"].map(z=>[z,z]);
 const WSTEPS=[
- {t:"Datos básicos",f:[["nombre","Nombre","text"],["sexo","Sexo","seg",[["h","Hombre"],["m","Mujer"]]],["edad","Edad","number"],["peso","Peso (kg)","number"],["altura","Altura (cm)","number"],["grasa","% de grasa","number","Opcional"],["metodoGrasa","Método de medida de grasa","text","Báscula, pliegues, DEXA…"]]},
- {t:"Objetivo",f:[["fase","Fase de trabajo","seg",[["definicion","Definición"],["mantenimiento","Mantenimiento"],["volumen","Volumen"]]],["fecha","Fecha límite o evento","text","p. ej. boda en junio, hasta marzo 2028"],["pesoObj","Peso o meta concreta","text"],["porque","¿Por qué ahora? ¿Qué quiere conseguir?","area"],["intentos","Dietas o intentos anteriores y cómo fueron","area"]]},
- {t:"Trabajo y día a día",f:[["profesion","¿De qué trabaja?","text"],["horario","Horario laboral","text","p. ej. 8:00–15:00, turnos…"],["modalidad","Cómo trabaja","seg",[["oficina","Sentado en oficina"],["teletrabajo","Teletrabajo"],["mixto","Mixto"],["pie","De pie"],["fisico","Trabajo físico"]]],["horasSentado","Horas sentado al día (trabajo + casa + coche)","number"],["desplazamiento","¿Cómo va al trabajo?","seg",[["coche","Coche"],["transporte","Transporte público"],["andando","Andando"],["bici","Bici"]]],["pausas","¿Puede levantarse durante el trabajo?","seg",[["si","Sí"],["aveces","A veces"],["no","No"]]],["actividadExtra","Otra actividad diaria","text","Perro, niños, paseos, tareas de casa…"],["pantallas","Horas de pantalla fuera del trabajo","number"]]},
- {t:"Entreno y actividad",f:[["diasEnt","Días que entrena","multi",WD.map((w,i)=>[i,w])],["hora","Hora habitual de entreno","text"],["dur","Duración (min)","number"],["tipo","Tipo de entreno","text","Fuerza, hipertrofia, cardio, deporte…"],["exp","Años entrenando fuerza de forma constante","number"],["pasos","Pasos diarios habituales","number"],["pasosMin","Pasos en días flojos","number"]]},
- {t:"Alimentación",f:[["ncomidas","Comidas al día y horarios","text","p. ej. 4: 7:30 / 13:00 / 17:30 / 21:00"],["diaEnt","Un día normal de entreno (con cantidades)","area"],["diaDesc","Un día sin entreno","area"],["finde","¿Cambia el fin de semana? ¿Comidas fuera?","area"],["pesaComida","¿Pesa la comida? ¿En crudo o cocinado?","text"],["alcohol","Alcohol y bebidas con azúcar","text"],["cocina","¿Quién cocina? ¿Tiempo para cocinar?","text"]]},
- {t:"Salud y hábitos",f:[["intol","Intolerancias o alergias","text"],["noToma","Alimentos que no toma o no le gustan","text"],["sueno","Horas de sueño","number"],["calidadSueno","Calidad del sueño (1–5)","number"],["estres","Estrés (1–5)","number"],["digestion","Digestión, hinchazón, tránsito","text"],["salud","Patologías o medicación","area","Si hay algo relevante, coordinar con su médico"],["suplementos","Suplementos que toma","text"]]},
- {t:"Ciclo menstrual",women:true,f:[["cicloRegular","¿Ciclo regular?","seg",[["si","Sí"],["no","No"],["na","No aplica (menopausia, embarazo…)"]]],["cicloLen","Duración del ciclo (días)","number"],["cicloInicio","Fecha de inicio de la última regla","date"],["sangrado","Días de sangrado","number"],["anticonceptivo","Anticonceptivo hormonal","seg",[["no","No"],["si","Sí"]]],["sintomas","Síntomas premenstruales","area","Hinchazón, hambre, cansancio, dolor…"],["cambiosCiclo","¿Ha cambiado el ciclo con dietas anteriores?","text"]]},
- {t:"Medidas iniciales",f:[["_perim","Perímetros (cm)","perim"],["_fotos","Fotos de inicio","fotos"]]}
+ {t:"Bienvenida",cli:true,nuevo:true,f:[["consSalud","Acepto que Miguel Ángel (Entrena Your Life) use mis datos de salud, entrenamiento, alimentación y ciclo menstrual, si procede, para preparar y seguir mi plan.","check"],["consFotos","También acepto subir fotos de mi progreso. Es opcional.","check"]],
+  req:d=>d.consSalud?"":"Para seguir necesitamos tu consentimiento"},
+ {t:"Tu objetivo",f:[["fase","¿Qué quieres conseguir?","seg",[["definicion","Perder grasa"],["mantenimiento","Mantenerme y mejorar"],["volumen","Ganar músculo"]]],["porque","¿Por qué ahora? ¿Tienes alguna fecha o evento?","area","Una frase basta"]],
+  req:d=>d.fase?"":"Dinos qué quieres conseguir"},
+ {t:"Sobre ti",f:[["sexo","Sexo","seg",[["h","Hombre"],["m","Mujer"]]],["edad","Edad","number"],["peso","Peso (kg)","number"],["altura","Altura (cm)","number"]],
+  req:d=>d.sexo&&parseFloat(d.edad)&&parseFloat(d.peso)&&parseFloat(d.altura)?"":"Necesitamos tu sexo, edad, peso y altura"},
+ {t:"Tu seguridad",nuevo:true,f:[...PARQ.map(([k,l])=>[k,l,"seg",SN]),
+  ["lesion","¿Tienes alguna lesión o dolor ahora mismo?","seg",SN],
+  ["lesionZona","¿Dónde?","multi",ZONAS_L,d=>d.lesion==="si"],
+  ["lesionDolor","¿Cuánto te duele, de 0 a 10?","number","",d=>d.lesion==="si"],
+  ["saludSi","¿Alguna enfermedad o medicación que deba saber?","seg",SN],
+  ["salud","Cuéntame","area","",d=>d.saludSi==="si"]],
+  req:d=>PARQ.every(([k])=>d[k])&&d.lesion&&d.saludSi?"":"Responde a todas las preguntas, por favor"},
+ {t:"Tu entreno",nuevo:true,f:[["diasEnt","¿Qué días puedes entrenar?","multi",WD.map((w,i)=>[i,w])],["dur","¿Cuánto tiempo tienes por sesión?","seg",[["30","30 min"],["45","45 min"],["60","60 min"],["90","90 min"]]],["lugar","¿Dónde entrenas?","seg",[["gym","Gimnasio"],["casamat","Casa con material"],["casa","Casa sin material"],["fuera","Al aire libre"]]],["exp","¿Cuánto llevas haciendo fuerza?","seg",[["0","Nada"],["0.5","Menos de 1 año"],["2","De 1 a 3 años"],["5","Más de 3 años"]]],["gustos","Ejercicios que odias o que te encantan","text","Opcional"]],
+  req:d=>(d.diasEnt||[]).length&&d.lugar?"":"Dinos qué días y dónde entrenas"},
+ {t:"Tu día a día",f:[["modalidad","¿Cómo es tu trabajo?","seg",[["oficina","Sentado"],["mixto","Mixto"],["pie","De pie"],["fisico","Físico"]]],["horasSentado","Horas sentado al día, sumando todo","seg",[["3","Menos de 4"],["6","De 4 a 8"],["10","Más de 8"]]],["pasos","Pasos al día","seg",[["4000","Menos de 5.000"],["6500","De 5.000 a 8.000"],["10000","De 8.000 a 12.000"],["13000","Más de 12.000"],["7000","No lo sé"]]],["sueno","Horas de sueño","seg",[["5.5","Menos de 6"],["6.5","De 6 a 7"],["7.5","De 7 a 8"],["8.5","Más de 8"]]],["estres","Estrés, del 1 al 5","seg",[["1","1"],["2","2"],["3","3"],["4","4"],["5","5"]]]]},
+ {t:"Tu comida",f:[["ncomidas","¿Cuántas comidas haces al día?","seg",[["2","2"],["3","3"],["4","4"],["5","5 o más"]]],["intol","Alergias o intolerancias","text","Opcional"],["pesaComida","¿Pesas la comida?","seg",[["si","Sí"],["aveces","A veces"],["no","No"]]]]},
+ {t:"Tu ciclo",women:true,f:[["cicloRegular","¿Tienes la regla?","seg",[["si","Sí, regular"],["no","Sí, irregular"],["na","No tengo regla"]]],
+  ["situacion","¿Cuál es tu caso?","seg",[["menopausia","Menopausia"],["embarazo","Embarazo"],["posparto","Posparto o lactancia"],["otra","Otro"]],d=>d.cicloRegular==="na"],
+  ["cicloInicio","Primer día de tu última regla","date","",d=>d.cicloRegular!=="na"],
+  ["anticonceptivo","¿Usas anticonceptivo hormonal?","seg",SN,d=>d.cicloRegular!=="na"]]}
 ];
-
-/* ======================= INTEGRACIÓN CON LA WEB (Supabase) ======================= */
+const parqSi=d=>PARQ.filter(([k])=>d[k]==="si");
+function intakeNeed(c){const e=c.entrevistaCli||{};if(!e.consent)return true;return!c.entrevistaFecha&&e.estado!=="enviada"&&e.estado!=="validada"}
+function intakeHTML(c){const e=c.entrevistaCli||{},d=e.data||{};const P=parqSi(d);const lug={gym:"Gimnasio",casamat:"Casa con material",casa:"Casa sin material",fuera:"Al aire libre"};const R=[];
+ if(!d.pq1&&!e.consent)return"";
+ R.push(["PAR-Q",d.pq1?(P.length?`<b>${P.length} «sí»:</b> ${P.map(([,l])=>esc(l)).join(" ")}`:"Todo «no»"):"Sin responder"]);
+ if(d.lesion)R.push(["Lesión o dolor",d.lesion==="si"?`${esc((d.lesionZona||[]).join(", ")||"Sin zona")} · ${esc(d.lesionDolor||"?")}/10`:"No"]);
+ if(d.saludSi==="si")R.push(["Salud",esc(d.salud)||"Dice que sí, sin detalle"]);
+ if(d.situacion)R.push(["Sin regla",esc({menopausia:"Menopausia",embarazo:"Embarazo",posparto:"Posparto o lactancia",otra:"Otro"}[d.situacion])]);
+ if(d.lugar)R.push(["Dónde entrena",lug[d.lugar]]);
+ if(d.gustos)R.push(["Gustos",esc(d.gustos)]);
+ R.push(["Consentimiento",e.consent?`Datos de salud: sí, el ${fmtD(e.consent.fecha)}. Fotos: ${e.consent.fotos?"sí":"no"}.`:"Aún no lo ha dado"]);
+ return`<div class="npanel"><h2>Seguridad y entreno</h2><dl class="nqa">${R.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>`}
 const PLAN_KEYS=["sexo","edad","altura","grasa","fase","exp","dias","hora","dur","pasos","pasosMin","sueno","lacteos","diasEnt","trabajo","entrevista","entrevistaFecha","dayTypes","reglas","kcalAprobadas","dietaVal","pesoInicial"];
-const CLI_KEYS=["pesos","perim","fotos","cuestionario","dietaSub","eventos","checkins","pasosBajos","ciclo","entrevistaCli"];
+const CLI_KEYS=["pesos","perim","fotos","cuestionario","dietaSub","eventos","checkins","pasosBajos","ciclo","cicloLog","entrevistaCli"];
 const defDay=()=>[["Desayuno",[]],["Comida",[]],["Merienda",[]],["Cena",[]]];
 function defaults(){return{sexo:"h",edad:30,altura:170,grasa:null,fase:"mantenimiento",exp:0,dias:3,hora:"",dur:60,pasos:7000,pasosMin:5000,sueno:7,lacteos:true,diasEnt:[0,2,4],
  trabajo:{},entrevista:{},entrevistaFecha:null,dayTypes:[{id:"tipo",nombre:"Día tipo",dias:7,actual:defDay(),prop:defDay()}],reglas:{...REGLAS0},kcalAprobadas:null,dietaVal:null,pesoInicial:null,
- pesos:[],perim:[],fotos:{},cuestionario:{estado:"pendiente",comidas:MEALQ.map(([n,on])=>({nombre:n,on,hora:"",texto:""})),resp:{}},dietaSub:null,eventos:[],checkins:{},pasosBajos:{},ciclo:null,
+ pesos:[],perim:[],fotos:{},cuestionario:{estado:"pendiente",comidas:MEALQ.map(([n,on])=>({nombre:n,on,hora:"",texto:""})),resp:{}},dietaSub:null,eventos:[],checkins:{},pasosBajos:{},ciclo:null,cicloLog:{},
  entrevistaCli:null,ajustes:[],flags:[],registros:[]}}
 function derive(c){
  c.pesos.sort((a,b)=>a[0]<b[0]?-1:1);
@@ -330,15 +406,25 @@ function derive(c){
  c.dias=c.diasEnt.length||c.dias;
  if(c.dayTypes.length>1){c.dayTypes[0].dias=c.diasEnt.length;c.dayTypes[1].dias=7-c.diasEnt.length}
 }
+/* Aviso del ciclo en la pantalla de Entreno: se lee una vez y se actualiza si cambia desde Nutrición */
+const CYCC={};
+function cycCache(c){CYCC[c.id]={ciclo:c.ciclo}}
+function cycBannerFill(box,k,go){if(!k||!k.inicio){box.hidden=true;return}const c={ciclo:k};const d=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,d);
+ box.hidden=false;box.innerHTML=`<b>Día ${d} · ${esc(lab)}</b><span>${cycTip(c,d,ph)}</span>`;
+ if(go){const b=document.createElement("button");b.type="button";b.className="btn ghost small";b.textContent="Apuntar cómo estoy";b.onclick=go;box.appendChild(b)}}
 let S=null;const URLS={};const MINDIFF={},DEXDIFF={};
-window.EYLNutri={view:function(o){const root=document.createElement("div");root.className="nu";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando nutrición…</p>';start(o,root);return root}};
+window.EYLNutri={intakeCheck:function(o){const id=o.client.id;return Promise.all([o.sb.from("nutri_plan").select("data").eq("cliente_id",id).maybeSingle(),o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle()]).then(([a,b])=>{if(a.error||b.error)return false;return intakeNeed({...(a.data?a.data.data:{}),...(b.data?b.data.data:{})})},()=>false)},
+ cycleBanner:function(o){const box=document.createElement("div");box.className="cycbanner";box.hidden=true;const id=o.client&&o.client.id;if(!id)return box;
+  if(CYCC[id]){cycBannerFill(box,CYCC[id].ciclo,o.go);return box}
+  o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle().then(r=>{const k=r&&r.data&&r.data.data?r.data.data.ciclo:null;CYCC[id]={ciclo:k||null};cycBannerFill(box,k,o.go)},()=>{});return box},
+ view:function(o){const root=document.createElement("div");root.className="nu";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando nutrición…</p>';start(o,root);return root}};
 async function start(o,root){
- S={root,sb:o.sb,coach:!!o.coach,flash:o.flash||function(){},tab:"resumen",ctab:"inicio",dayIdx:0,wk:weekStart(addD(TODAY,o.coach?1:0)),selDay:null,openEq:null,wiz:null,qedit:false,draft:{}};
+ S={root,sb:o.sb,coach:!!o.coach,flash:o.flash||function(){},intake:o.onDone||null,intakeDone:false,tab:"resumen",ctab:"inicio",dayIdx:0,wk:weekStart(addD(TODAY,o.coach?1:0)),selDay:null,openEq:null,wiz:null,qedit:false,draft:{}};
  bind(root);
  try{const id=o.client.id;
   const [a,b]=await Promise.all([S.sb.from("nutri_plan").select("data").eq("cliente_id",id).maybeSingle(),S.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle()]);
   if(a.error)throw a.error;if(b.error)throw b.error;
-  const c={...defaults(),...(a.data?a.data.data:{}),...(b.data?b.data.data:{})};c.id=id;c.nombre=o.client.nombre||o.client.email||"";derive(c);S.c=c;render();
+  const c={...defaults(),...(a.data?a.data.data:{}),...(b.data?b.data.data:{})};c.id=id;c.nombre=o.client.nombre||o.client.email||"";derive(c);S.c=c;if(S.intake){wizStart(c,false);window.scrollTo(0,0)}else render();
  }catch(e){root.innerHTML=`<p class="err">No se pudo cargar la nutrición. ${esc(e.message||"")}</p>`}
 }
 /* guardar: lo del entrenador va entero a nutri_plan; lo del cliente se fusiona con lo último guardado para no pisar cambios del otro lado */
@@ -384,7 +470,7 @@ function coachHTML(c){
  const ec=c.entrevistaCli||{};
  if(!c.entrevistaFecha)return `<div class="npanel"><h2>Nutrición de ${esc(c.nombre)}</h2>
   ${ec.estado==="enviada"?`<div class="ntask hot"><div><b>Ha enviado su entrevista inicial</b><span>El ${fmtD(ec.fecha||TODAY)}. Revísala, corrige lo que haga falta, añade una nota si quieres y valídala.</span></div><span></span></div>
-   <button class="btn primary wide" data-act="wizreview">Revisar y validar</button>`
+   ${intakeHTML(c).replace(/^<div class="npanel">|<\/div>$/g,"")}<button class="btn primary wide" data-act="wizreview">Revisar y validar</button>`
   :`<p class="nmuted">${ec.estado==="borrador"?"Ha empezado la entrevista inicial en su app, pero aún no la ha enviado.":"Aún no ha rellenado la entrevista inicial. Le sale como primera tarea al entrar en su app."} Cuando la envíe, te llegará aquí para validarla.</p>
    <button class="btn ghost wide" data-act="wizstart">Rellenarla yo</button>`}
   ${c.cuestionario.estado!=="pendiente"?'<p class="nsmall">✓ Ya ha rellenado su cuestionario de comida.</p>':""}
@@ -397,9 +483,9 @@ function coachHTML(c){
 function resumenHTML(c){
  const x=calc(c),A=alerts(c),pr=weekAvg(c,"prop"),H=habitos(c);const kc=c.kcalAprobadas||pr.k;
  let cyc="";if(c.ciclo&&c.ciclo.inicio){const cd=cycleDay(c,TODAY),Lc=c.ciclo.len;const[,lab]=cyclePhase(c,cd);
-  cyc=`<div class="npanel"><div class="nrow nbetween"><h2>Ciclo</h2><span class="nchip">Día ${cd} de ${Lc} · ${lab}</span></div>
-   <div class="ncycle" style="grid-template-columns:repeat(${Lc},1fr)">${Array.from({length:Lc},(_,i)=>`<i class="${cyclePhase(c,i+1)[0]}${i+1===cd?" today":""}"></i>`).join("")}</div>
-   <p class="nsmall nmuted">Pesos, perímetros y fotos se comparan en la misma fase: días 5–10. Próxima regla prevista: <b>${fmtD(addD(c.ciclo.inicio,Lc))}</b>.</p></div>`}
+  cyc=`<div class="npanel"><div class="nrow nbetween"><h2>Ciclo</h2><span class="nchip">Día ${cd}${c.ciclo.regular===false||c.ciclo.anticonceptivo?"":` de ${Lc}`} · ${lab}</span></div>
+   ${cycBarHTML(c,cd)}
+   <p class="nsmall nmuted">Pesos, perímetros y fotos se comparan en la misma fase: días 5–10. ${cycNext(c)}</p>${cycHistHTML(c,false)}${cycPatternHTML(c,false)}</div>`}
  return `<div class="npanel"><h2>Avisos</h2>${alertsHTML(A)}</div>
  <div class="npanel"><div class="nrow nbetween"><h2>Objetivo</h2><span class="nsmall nmuted">${x.metodo==="real"?"Con su ritmo de peso real":"Por fórmula (calibrando)"}</span></div>
   <div class="nkpis">
@@ -557,7 +643,7 @@ function planHTML(c){
 function perimTable(c){
  const lp=c.perim[c.perim.length-1],first=c.perim[0];
  return `<div class="ntbl"><table><thead><tr><th>Fecha</th>${PERIM.map(p=>`<th>${p[1]}</th>`).join("")}</tr></thead><tbody>
-  ${c.perim.map((m,i)=>`<tr><td>${fmtD(m.fecha)}${c.ciclo&&c.ciclo.inicio?` <span class="nsmall nmuted">· día ${cycleDay(c,m.fecha)}</span>`:""}</td>${PERIM.map(([k])=>{const pv=i?c.perim[i-1][k]:null;const dd=pv!=null&&m[k]!=null?m[k]-pv:null;return`<td>${m[k]??"—"}${dd?` <span class="${dd>0?"nup":"ndown"} nsmall">${dd>0?"+":""}${r1(dd)}</span>`:""}</td>`}).join("")}</tr>`).join("")||`<tr><td colspan="${PERIM.length+1}" class="nmuted">Sin mediciones.</td></tr>`}
+  ${c.perim.map((m,i)=>`<tr><td>${fmtD(m.fecha)}${c.ciclo&&c.ciclo.inicio?` ${cycleDay(c,m.fecha)?`<span class="nsmall nmuted">· día ${cycleDay(c,m.fecha)}</span>`:""}`:""}</td>${PERIM.map(([k])=>{const pv=i?c.perim[i-1][k]:null;const dd=pv!=null&&m[k]!=null?m[k]-pv:null;return`<td>${m[k]??"—"}${dd?` <span class="${dd>0?"nup":"ndown"} nsmall">${dd>0?"+":""}${r1(dd)}</span>`:""}</td>`}).join("")}</tr>`).join("")||`<tr><td colspan="${PERIM.length+1}" class="nmuted">Sin mediciones.</td></tr>`}
   ${first&&c.perim.length>1?`<tr class="ntot"><td>Desde el inicio</td>${PERIM.map(([k])=>{const dd=(lp[k]??0)-(first[k]??0);return`<td class="${dd>0?"nup":dd<0?"ndown":"nsame"}">${dd>0?"+":""}${r1(dd)}</td>`}).join("")}</tr>`:""}
  </tbody></table></div>
  ${lp?`<div class="nnote"><b>Derecha − izquierda:</b> ${PAIRS.map(([l,d,i])=>{if(lp[d]==null||lp[i]==null)return`${l}: —`;const df=lp[d]-lp[i];const cl=Math.abs(df)>=1.5?"bad":Math.abs(df)>=1?"warn":"ok";return`${l} ${df>0?"+":""}${r1(df)} cm <span class="npill ${L(cl)}">${cl==="ok"?"equilibrado":cl==="warn"?"vigilar":"revisar"}</span>`}).join(" · ")}</div>`:""}`;
@@ -586,7 +672,7 @@ function weightForm(){return `<form class="nrow" data-form="peso"><label class="
 const TRAB2=TRAB;
 function entrevistaHTML(c){
  const e=c.entrevista||{},t=c.trabajo||{};
- return `<div class="npanel"><h2>Entrevista inicial</h2><dl class="nqa">${Object.entries(e).map(([k,v])=>k.startsWith("§")?`<h3>${esc(k.slice(1))}</h3>`:`<dt>${esc(k)}</dt><dd>${esc(v)||'<span class="nmuted">—</span>'}</dd>`).join("")}</dl>
+ return `${intakeHTML(c)}<div class="npanel"><h2>Entrevista inicial</h2><dl class="nqa">${Object.entries(e).map(([k,v])=>k.startsWith("§")?`<h3>${esc(k.slice(1))}</h3>`:`<dt>${esc(k)}</dt><dd>${esc(v)||'<span class="nmuted">—</span>'}</dd>`).join("")}</dl>
   <button class="btn ghost small" data-act="wizstart">Repetir entrevista</button></div>
  <div class="npanel"><h2>Trabajo y día a día</h2><div class="nform">
   ${TRAB2.map(([k,l,ty,op])=>ty==="sel"?`<label class="nf">${l}<select data-tr="${k}"><option value="">—</option>${op.map(([v,tx])=>`<option value="${v}"${t[k]===v?" selected":""}>${tx}</option>`).join("")}</select></label>`:`<label class="nf">${l}<input type="${ty}" data-tr="${k}" value="${esc(t[k])}"></label>`).join("")}</div></div>
@@ -606,49 +692,62 @@ function entrevistaHTML(c){
 function wizStart(c,review){const base={nombre:c.nombre,sexo:c.sexo||"h",fase:c.fase||"mantenimiento",cicloRegular:"si",anticonceptivo:"no",diasEnt:(c.diasEnt||[0,2,4]).slice(),
  edad:c.entrevistaFecha?c.edad:"",peso:c.entrevistaFecha?c.peso:"",altura:c.entrevistaFecha?c.altura:"",grasa:c.grasa||"",...(c.trabajo||{})};
  const ec=c.entrevistaCli;const prev=ec&&ec.data?JSON.parse(JSON.stringify(ec.data)):{};
- S.wiz={step:0,review:!!review,client:!S.coach,data:{...base,...prev,nombre:c.nombre,_nota:(ec&&ec.nota)||""},files:{}};render()}
-function stepsFor(){return WSTEPS.filter(s=>!s.women||S.wiz.data.sexo==="m")}
+ S.wiz={step:0,review:!!review,client:!S.coach,ext:!S.coach&&(!!c.entrevistaFecha||(ec&&(ec.estado==="enviada"||ec.estado==="validada"))),data:{...base,...prev,nombre:c.nombre,_nota:(ec&&ec.nota)||""},files:{}};
+ if(S.wiz.client&&!S.wiz.ext){["sexo","fase"].forEach(k=>{if(!prev[k])delete S.wiz.data[k]});if(!prev.diasEnt)S.wiz.data.diasEnt=[]}
+ if(ec&&ec.consent){S.wiz.data.consSalud=true;S.wiz.data.consFotos=!!ec.consent.fotos}
+ render()}
+function stepsFor(){const w=S.wiz;return WSTEPS.filter(s=>(!s.women||w.data.sexo==="m")&&(!s.cli||w.client)&&(!w.ext||s.nuevo))}
 function wizardHTML(){
  const St=stepsFor(),s=St[S.wiz.step],d=S.wiz.data;
- const field=([k,l,type,extra])=>{
+ const field=([k,l,type,extra,cond])=>{
   if(k==="nombre"||k.startsWith("_"))return"";
-  if(type==="seg")return`<div class="nwide"><span class="nk">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wseg="${k}" data-v="${v}" aria-pressed="${d[k]===v}">${t}</button>`).join("")}</div></div>`;
-  if(type==="multi")return`<div class="nwide"><span class="nk">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wmulti="${k}" data-v="${v}" aria-pressed="${(d[k]||[]).includes(v)}">${t}</button>`).join("")}</div></div>`;
+  if(cond&&!cond(d))return"";
+  if(type==="check")return`<label class="ncheck nwide"><input type="checkbox" data-wchk="${k}"${d[k]?" checked":""}><span>${l}</span></label>`;
+  if(type==="seg")return`<div class="nwide"><span class="nq">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wseg="${k}" data-v="${v}" aria-pressed="${d[k]===v}">${t}</button>`).join("")}</div></div>`;
+  if(type==="multi")return`<div class="nwide"><span class="nq">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wmulti="${k}" data-v="${esc(v)}" aria-pressed="${(d[k]||[]).includes(v)}">${t}</button>`).join("")}</div></div>`;
   if(type==="area")return`<label class="nf nwide">${l}${extra?` <small>${extra}</small>`:""}<textarea data-w="${k}">${esc(d[k])}</textarea></label>`;
   if(type==="perim")return`<div class="nwide nform">${PERIM.map(([pk,pl])=>`<label class="nf">${pl}<input type="number" inputmode="decimal" step="0.5" data-w="p_${pk}" value="${esc(d["p_"+pk])}"></label>`).join("")}</div>`;
   if(type==="fotos")return`<div class="nwide nphotos">${ANGLES.map(([ak,al])=>`<label class="nslot">${S.wiz.files[ak]?`<span>✓ ${al}</span>`:`<span>${al}<br><small>Toca para subir</small></span>`}<input type="file" accept="image/*" data-wphoto="${ak}" aria-label="Foto ${al}"></label>`).join("")}</div>`;
-  return`<label class="nf">${l}${extra?` <small>${extra}</small>`:""}<input type="${type}" data-w="${k}" value="${esc(d[k])}"${type==="number"?' step="any" inputmode="decimal"':""}></label>`};
- return `<div class="npanel"><h2>${S.wiz.client?"Tu entrevista inicial":S.wiz.review?"Revisar entrevista · "+esc(d.nombre):"Entrevista inicial · "+esc(d.nombre)}</h2>${S.wiz.client&&S.wiz.step===0?'<p class="nsmall nmuted">Unos 10 minutos. Con esto tu entrenador calcula tu plan de comida y entreno. Se guarda según avanzas.</p>':""}<span class="nsmall nmuted">Paso ${S.wiz.step+1} de ${St.length}</span>
+  return`<label class="nf">${l}${extra?` <small>${extra}</small>`:""}<input type="${type}" data-w="${k}" value="${esc(d[k])}"${type==="number"?' step="any" inputmode="decimal"':""}${type==="date"?` max="${TODAY}"`:""}></label>`};
+ return `<div class="npanel"><h2>${S.wiz.client?(S.wiz.ext?"Faltan unos datos":"Tu entrevista inicial"):S.wiz.review?"Revisar entrevista · "+esc(d.nombre):"Entrevista inicial · "+esc(d.nombre)}</h2>${S.wiz.client&&S.wiz.step===0?`<p class="nsmall nmuted">${S.wiz.ext?"Unos 2 minutos. Son datos nuevos que antes no te pedíamos.":"Unos 6 minutos, casi todo con un toque. Con esto preparo tu plan de entreno y comida. Se guarda según avanzas, así que puedes seguir luego."}</p>`:""}<span class="nsmall nmuted">Paso ${S.wiz.step+1} de ${St.length}</span>
   <div class="nsteps">${St.map((_,i)=>`<span class="${i<S.wiz.step?"done":i===S.wiz.step?"cur":""}"></span>`).join("")}</div>
   <h3>${s.t}</h3><div class="nform">${s.f.map(field).join("")}</div>
-  ${s.t==="Trabajo y día a día"?'<div class="nnote">Con esto la web le recomienda hábitos: pausas activas si pasa muchas horas sentado, paseos tras las comidas…</div>':""}
-  ${s.t==="Ciclo menstrual"?'<div class="nnote">Para comparar peso y medidas siempre en la misma fase y detectar si el plan altera el ciclo.</div>':""}
+  ${s.t==="Bienvenida"?'<div class="nnote">Tus datos solo los podéis ver tú y tu entrenador. Puedes retirar tu consentimiento cuando quieras pidiéndoselo a él. Esta app no sustituye a tu médico.</div>':""}
+  ${s.t==="Sobre ti"&&parseFloat(d.edad)<18?'<div class="nnote">Si eres menor de edad, necesitamos la autorización de tu madre, padre o tutor. Díselo a tu entrenador.</div>':""}
+  ${s.t==="Tu seguridad"&&parqSi(d).length?'<div class="nnote"><b>Has marcado algún «sí».</b> Consulta con tu médico antes de empezar o aumentar tu actividad. Tu entrenador lo verá y lo hablará contigo.</div>':""}
+  ${s.t==="Tu ciclo"?'<div class="nnote">Sirve para comparar peso y medidas en la misma fase y ver cómo te afecta.</div>':""}
   ${S.wiz.step===St.length-1&&!S.wiz.client?`<label class="nf">Nota para ${esc(d.nombre)} <small>Opcional. Se le muestra cuando valides</small><textarea data-w="_nota" placeholder="Algo que quieras explicarle o pedirle">${esc(d._nota)}</textarea></label>`:""}
   ${S.wiz.step===St.length-1&&S.wiz.client?'<div class="nnote">Al enviarla, tu entrenador la revisa y te avisa. Si algo no lo sabes, déjalo en blanco.</div>':""}
-  <div class="nrow nbetween"><button class="btn ghost" type="button" data-wnav="-1">${S.wiz.step?"← Atrás":S.wiz.client?"Salir":"Cancelar"}</button><button class="btn primary" type="button" data-wnav="1">${S.wiz.step===St.length-1?(S.wiz.client?"Enviar a mi entrenador":S.wiz.review?"Validar":"Guardar"):"Siguiente →"}</button></div></div>`;
+  <div class="nrow nbetween"><button class="btn ghost" type="button" data-wnav="-1">${S.wiz.step?"← Atrás":S.wiz.client?"Seguir luego":"Cancelar"}</button><button class="btn primary" type="button" data-wnav="1">${S.wiz.step===St.length-1?(S.wiz.client?"Enviar a mi entrenador":S.wiz.review?"Validar":"Guardar"):"Siguiente →"}</button></div></div>`;
 }
-function wizDraft(){if(!S.wiz||!S.wiz.client)return;const d={...S.wiz.data};delete d._nota;S.c.entrevistaCli={...(S.c.entrevistaCli||{}),estado:"borrador",data:d};save("entrevistaCli")}
+function wizConsent(d){return{salud:true,fotos:!!d.consFotos,fecha:((S.c.entrevistaCli||{}).consent||{}).fecha||TODAY,version:1}}
+function wizDraft(){if(!S.wiz||!S.wiz.client)return;const d={...S.wiz.data};delete d._nota;if(!d.consSalud)return;const e=S.c.entrevistaCli||{};S.c.entrevistaCli={...e,estado:S.wiz.ext?e.estado:"borrador",consent:wizConsent(d),data:d};save("entrevistaCli")}
+async function flushSave(){clearTimeout(saveT);if(dirty.size)await doSave()}
+async function wizLeave(){wizDraft();S.wiz=null;if(S.intake){await flushSave();S.intake()}else render()}
 async function wizClientSend(){
  const c=S.c,d={...S.wiz.data},n=v=>parseFloat(String(v??"").replace(",","."));delete d._nota;
- if(!n(d.peso)||!n(d.altura)||!n(d.edad)){S.wiz.step=0;render();S.flash("Necesitamos al menos tu edad, peso y altura");return}
- if(n(d.peso)){c.pesos=c.pesos.filter(p=>p[0]!==TODAY);c.pesos.push([TODAY,n(d.peso)])}
+ const ext=S.wiz.ext,prevE=c.entrevistaCli||{};
+ if(!ext&&(!n(d.peso)||!n(d.altura)||!n(d.edad))){S.wiz.step=Math.max(0,stepsFor().findIndex(x=>x.t==="Sobre ti"));render();S.flash("Necesitamos al menos tu edad, peso y altura");return}
+ if(!ext&&n(d.peso)){c.pesos=c.pesos.filter(p=>p[0]!==TODAY);c.pesos.push([TODAY,n(d.peso)])}
  const m={fecha:TODAY};let any=false;PERIM.forEach(([k])=>{const v=n(d["p_"+k]);if(v){m[k]=v;any=true}});if(any){c.perim=c.perim.filter(p=>p.fecha!==TODAY);c.perim.push(m)}
- if(d.sexo==="m"&&d.cicloRegular!=="na"&&d.cicloInicio)c.ciclo={regular:d.cicloRegular==="si",len:n(d.cicloLen)||28,sangrado:n(d.sangrado)||5,inicio:d.cicloInicio,anticonceptivo:d.anticonceptivo==="si"};
- const files=S.wiz.files;S.wiz=null;S.ctab="inicio";
+ cycFromInt(c,d);
+ const files=S.wiz.files;const consent0=wizConsent(d);S.wiz=null;S.ctab="inicio";
  for(const k of Object.keys(files)){try{const p=await upImg(files[k],`${c.id}/fotos/${TODAY}_${k}_${Date.now()}.jpg`);c.fotos[TODAY]=c.fotos[TODAY]||{};c.fotos[TODAY][k]=p}catch(e){S.flash("No se pudo subir una foto")}}
- c.entrevistaCli={estado:"enviada",fecha:TODAY,data:d};save("entrevistaCli","pesos","perim","fotos","ciclo");render();S.flash("¡Enviada a tu entrenador!");
+ c.entrevistaCli=ext?{...prevE,consent:consent0,ampliada:TODAY,data:d}:{estado:"enviada",fecha:TODAY,consent:consent0,data:d};cycCache(c);save("entrevistaCli","pesos","perim","fotos","ciclo");
+ if(S.intake){await flushSave();S.intakeDone=true;render();return}
+ render();S.flash("¡Enviada a tu entrenador!");
 }
 async function wizFinish(){
  if(S.wiz.client)return wizClientSend();
  const c=S.c,d=S.wiz.data,n=v=>parseFloat(String(v??"").replace(",","."));const review=S.wiz.review;
  if(!n(d.peso)||!n(d.altura)||!n(d.edad)){S.wiz.step=0;render();S.flash("Faltan edad, peso o altura");return}
- const labels={};WSTEPS.forEach(s=>{if(s.women&&d.sexo!=="m")return;if(s.t==="Medidas iniciales")return;labels["§"+s.t]="";s.f.forEach(([k,l,t,ex])=>{if(k==="nombre")return;let v=d[k];if(t==="seg")v=(ex.find(e=>e[0]===v)||[,""])[1];if(t==="multi")v=(v||[]).map(i=>WD[i]).join(", ");labels[l]=v??""})});
+ const labels={...(c.entrevista||{})};WSTEPS.forEach(s=>{if(s.cli||(s.women&&d.sexo!=="m"))return;labels["§"+s.t]="";s.f.forEach(([k,l,t,ex,cond])=>{if(k==="nombre"||(cond&&!cond(d)))return;let v=d[k];if(t==="seg")v=(ex.find(e=>e[0]===v)||[,""])[1];if(t==="multi")v=(v||[]).map(i=>(ex.find(e=>e[0]===i)||[,i])[1]).join(", ");labels[l]=v??""})});
  const de=(d.diasEnt||[]).slice().sort();
  Object.assign(c,{sexo:d.sexo,edad:n(d.edad),altura:n(d.altura),grasa:n(d.grasa)||null,fase:d.fase,exp:n(d.exp)||0,diasEnt:de.length?de:[0,2,4],dias:de.length||3,hora:d.hora||"",dur:n(d.dur)||60,
   pasos:n(d.pasos)||7000,pasosMin:n(d.pasosMin)||0,sueno:n(d.sueno)||7,lacteos:!/l[aá]ct/i.test((d.intol||"")+(d.noToma||"")),pesoInicial:n(d.peso),
   trabajo:{profesion:d.profesion||"",horario:d.horario||"",modalidad:d.modalidad||"",horasSentado:n(d.horasSentado)||0,desplazamiento:d.desplazamiento||"",pausas:d.pausas||"",actividadExtra:d.actividadExtra||"",pantallas:n(d.pantallas)||0},
   entrevista:labels,entrevistaFecha:TODAY});
- if(d.sexo==="m"&&d.cicloRegular!=="na"&&d.cicloInicio)c.ciclo={regular:d.cicloRegular==="si",len:n(d.cicloLen)||28,sangrado:n(d.sangrado)||5,inicio:d.cicloInicio,anticonceptivo:d.anticonceptivo==="si"};
+ cycFromInt(c,d);
  if(!review||!c.pesos.length){c.pesos=c.pesos.filter(p=>p[0]!==TODAY);c.pesos.push([TODAY,n(d.peso)])}
  const m={fecha:TODAY};let any=false;PERIM.forEach(([k])=>{const v=n(d["p_"+k]);if(v){m[k]=v;any=true}});if(any&&(!review||!c.perim.length)){c.perim=c.perim.filter(p=>p.fecha!==TODAY);c.perim.push(m)}
  const dd={...d};delete dd._nota;c.entrevistaCli={...(c.entrevistaCli||{}),estado:"validada",validada:TODAY,data:dd,nota:(d._nota||"").trim()};
@@ -661,8 +760,28 @@ async function wizFinish(){
 const CT=[["inicio","Inicio"],["comida","Mi comida"],["dieta","Mi dieta"],["hoy","Hoy"],["medidas","Medidas"]];
 function clientHTML(c){
  if(S.wiz)return wizardHTML();
+ if(S.intakeDone){const d=(c.entrevistaCli||{}).data||{};return`<div class="npanel"><h2>¡Hecho!</h2><p>${(c.entrevistaCli||{}).ampliada?"Gracias, ya lo tengo. Sigue con tu plan como hasta ahora.":"Reviso lo que me has contado y te preparo tu plan. Te aviso cuando esté listo."}</p>
+  ${parqSi(d).length?'<div class="nnote"><b>Importante:</b> has marcado algún «sí» en las preguntas de seguridad. Consulta con tu médico antes de empezar.</div>':""}
+  ${(c.entrevistaCli||{}).ampliada?"":'<p class="nsmall nmuted">Esta semana te irán saliendo tareas cortas en Nutrición: tus comidas, tus medidas y las fotos, si las has aceptado.</p>'}
+  <button class="btn primary wide" data-act="intakeclose">Entrar en la app</button></div>`}
  const body={inicio:cInicio,comida:cComida,dieta:cDieta,hoy:cHoy,medidas:cMedidas}[S.ctab](c);
  return `<div class="ntabs" role="tablist">${CT.map(([k,l])=>`<button type="button" role="tab" data-ctab="${k}" aria-selected="${S.ctab===k}">${l}</button>`).join("")}</div><span id="nsync" class="nsmall nmuted"></span>${body}`;
+}
+function cCiclo(c){
+ if(!cycWoman(c)||cycNA(c))return"";
+ if(!c.ciclo||!c.ciclo.inicio)return`<div class="npanel"><h2>Tu ciclo</h2><p class="nsmall nmuted">Apunta tu última regla y empieza a ver cómo te afecta.</p>
+  <form class="nrow" data-form="cicloini"><label class="nf" style="flex:1 1 140px">Primer día de tu última regla<input type="date" name="fecha" max="${TODAY}" required></label><button class="btn primary small" type="submit" style="align-self:end">Guardar</button></form></div>`;
+ const k=c.ciclo,cd=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,cd),hoy=(c.cicloLog||{})[TODAY]||{},sint=hoy.s||[];
+ return`<div class="npanel"><div class="nrow nbetween"><h2>Tu ciclo</h2><span class="nchip">Día ${cd}${k.regular===false||k.anticonceptivo?"":` de ${k.len||28}`} · ${lab}</span></div>
+  ${cycBarHTML(c,cd)}
+  <p class="nsmall">${cycTip(c,cd,ph)}</p>${cycNext(c)?`<p class="nsmall nmuted">${cycNext(c)}</p>`:""}
+  <div class="nrow"><button class="btn primary small" data-act="cycreg">Me ha bajado hoy</button><button class="btn ghost small" data-act="cycotro" aria-expanded="${!!S.cycOtro}">Fue otro día</button></div>
+  ${S.cycOtro?`<form class="nrow" data-form="cicloini"><label class="nf" style="flex:1 1 140px">Primer día de la regla<input type="date" name="fecha" max="${TODAY}" required></label><button class="btn primary small" type="submit" style="align-self:end">Guardar</button></form>`:""}
+  <h3>¿Cómo estás hoy?</h3>
+  <span class="nk">Energía</span><div class="nseg">${[1,2,3,4,5].map(n=>`<button type="button" data-cyce="${n}" aria-pressed="${hoy.e===n}" aria-label="Energía ${n} de 5">${n}</button>`).join("")}</div>
+  <span class="nk">Síntomas</span><div class="nseg">${CYC_SINT.map(([x,l])=>`<button type="button" data-cycs="${x}" aria-pressed="${sint.includes(x)}">${l}</button>`).join("")}</div>
+  ${sint.includes("dolorf")?'<div class="nnote">Si el dolor es fuerte o te impide hacer tu día a día, eso ya es para tu ginecóloga.</div>':""}
+  ${cycPatternHTML(c,true)}${cycHistHTML(c,true)}</div>`;
 }
 function cInicio(c){
  const q=c.cuestionario,de=c.dietaExt;const T=[];
@@ -671,7 +790,7 @@ function cInicio(c){
  if(de.estado==="recibida"||de.estado==="revision")T.push(["","Tu entrenador está revisando tu dieta","Te avisamos cuando esté validada.",null,null]);
  if(de.estado==="validada")T.push(["","Tu dieta está validada","Mira qué ha cambiado y por qué.","dieta","Ver"]);
  const ec=c.entrevistaCli||{};
- if(!c.entrevistaFecha&&ec.estado!=="enviada")T.unshift(["hot",ec.estado==="borrador"?"Termina tu entrevista inicial":"Rellena tu entrevista inicial","Unos 10 minutos. Es lo primero: con esto se calcula tu plan.","_wiz",ec.estado==="borrador"?"Seguir":"Empezar"]);
+ if(!c.entrevistaFecha&&ec.estado!=="enviada")T.unshift(["hot",ec.estado==="borrador"?"Termina tu entrevista inicial":"Rellena tu entrevista inicial","Unos 6 minutos. Es lo primero: con esto se prepara tu plan.","_wiz",ec.estado==="borrador"?"Seguir":"Empezar"]);
  if(!c.entrevistaFecha&&ec.estado==="enviada")T.unshift(["","Tu entrenador está revisando tu entrevista","Te avisamos cuando esté validada.",null,null]);
  if(c.entrevistaFecha&&ec.nota&&diffD(ec.validada||TODAY,TODAY)<=14)T.unshift(["","Tu entrevista está validada","De tu entrenador: "+ec.nota,null,null]);
  const lp=c.perim[c.perim.length-1];if(c.entrevistaFecha&&(!lp||diffD(lp.fecha,TODAY)>=30))T.push(["","Toca medirse este mes","Perímetros (brazos y muslos derecho e izquierdo) y 3 fotos."+(c.ciclo?" Mejor entre los días 5 y 10 de tu ciclo.":""),"medidas","Ir"]);
@@ -681,6 +800,7 @@ function cInicio(c){
   ${d.act.map(a=>`<div class="ntask hot"><div><b>Hoy toca: ${esc(a.txt)}</b><span>${esc(a.det)}</span></div><span></span></div>`).join("")}<button class="btn ghost wide" data-ctab="hoy">Ver mis comidas de hoy</button></div>`}
  return `<div class="npanel"><h2>Para hoy</h2>${T.map(([cl,t,s,go,b])=>`<div class="ntask ${cl}"><div><b>${t}</b><span>${s}</span></div>${go?(go==="_wiz"?`<button class="btn primary small" data-act="wizstart">${b}</button>`:`<button class="btn primary small" data-ctab="${go}">${b}</button>`):"<span></span>"}</div>`).join("")}
   ${hoyP?'<p class="nsmall nmuted">Peso de hoy apuntado ✓</p>':`<form class="nrow" data-form="peso"><input type="hidden" name="fecha" value="${TODAY}"><label class="nf" style="flex:1 1 140px">Tu peso de hoy, en ayunas (kg)<input type="number" inputmode="decimal" step="0.1" min="30" max="250" name="peso" required></label><button class="btn primary small" type="submit" style="align-self:end">Guardar</button></form>`}</div>
+ ${cCiclo(c)}
  ${dia}
  ${c.entrevistaFecha?`<div class="npanel"><h2>Check-in de la semana</h2>${ci?'<p class="nsmall nmuted">Hecho ✓. ¡Gracias!</p>':`<p class="nsmall nmuted">1 minuto. Sirve para ajustar tu plan.</p>
   <form class="nform" data-form="checkin">${[["hambre","Hambre (1–5)"],["energia","Energía (1–5)"],["sueno","Sueño (1–5)"],["estres","Estrés (1–5)"],["adherencia","¿Cuánto has cumplido? (%)"]].map(([k,l])=>`<label class="nf">${l}<input type="number" inputmode="numeric" name="${k}" min="${k==="adherencia"?0:1}" max="${k==="adherencia"?100:5}"></label>`).join("")}<div class="nwide"><button class="btn primary small" type="submit">Enviar</button></div></form>`}</div>`:""}
@@ -722,7 +842,7 @@ function cMedidas(c){
  const lp=c.perim[c.perim.length-1];const due=!lp||diffD(lp.fecha,TODAY)>=30;
  return `<div class="npanel"><h2>Peso</h2><p class="nsmall nmuted">Cada mañana, en ayunas, después de ir al baño. Lo que cuenta es la media de la semana.</p>${chart(c)}${weightForm()}</div>
  <div class="npanel"><div class="nrow nbetween"><h2>Medidas del mes</h2>${due?'<span class="npill l-warn">Toca medir</span>':`<span class="npill l-ok">Próxima: ${fmtD(addD(lp.fecha,30))}</span>`}</div>${perimForm(c)}${c.perim.length?perimTable(c):""}</div>
- <div class="npanel"><h2>Fotos del mes</h2>${photosHTML(c)}</div>`;
+ <div class="npanel"><h2>Fotos del mes</h2>${(c.entrevistaCli||{}).consent&&!c.entrevistaCli.consent.fotos?'<p class="nsmall nmuted">No has aceptado subir fotos. Son opcionales: si cambias de idea, actívalas aquí.</p><button class="btn ghost small" data-act="fotosok">Aceptar fotos</button>':photosHTML(c)}</div>`;
 }
 
 /* ======================= EVENTOS ======================= */
@@ -733,6 +853,7 @@ function bind(root){
 }
 function onClick(e){
  const b=e.target.closest("button,a[data-act]");if(!b||!S||!S.c)return;const c=S.c,ds=b.dataset;
+ const act0=ds.act;
  if(ds.tab){S.tab=ds.tab;render();return}
  if(ds.ctab){S.ctab=ds.ctab;render();window.scrollTo(0,0);return}
  if(ds.day){S.dayIdx=+ds.day;render();return}
@@ -740,12 +861,17 @@ function onClick(e){
  if(ds.sel){S.selDay=ds.sel;S.openEq=null;render();return}
  if(ds.eq){S.openEq=S.openEq===ds.eq?null:ds.eq;render();return}
  if(ds.ent){const i=+ds.ent;c.diasEnt=c.diasEnt.includes(i)?c.diasEnt.filter(x=>x!==i):[...c.diasEnt,i].sort();save("diasEnt","dayTypes","dias");render();return}
+ if(ds.cyce){const r=c.cicloLog[TODAY]=c.cicloLog[TODAY]||{};r.e=r.e===+ds.cyce?undefined:+ds.cyce;save("cicloLog");render();return}
+ if(ds.cycs){const r=c.cicloLog[TODAY]=c.cicloLog[TODAY]||{};const a=r.s||[];r.s=a.includes(ds.cycs)?a.filter(x=>x!==ds.cycs):[...a,ds.cycs];save("cicloLog");render();return}
+ if(act0==="intakeclose"){S.intake();return}
+ if(act0==="fotosok"){const e=c.entrevistaCli;e.consent={...e.consent,fotos:true,fotosFecha:TODAY};save("entrevistaCli");render();return}
+ if(ds.cycdel){if(cycUnmark(c,ds.cycdel)){cycCache(c);save("ciclo");render();S.flash("Regla quitada")}return}
  if(ds.lowsteps){if(c.pasosBajos[ds.lowsteps])delete c.pasosBajos[ds.lowsteps];else c.pasosBajos[ds.lowsteps]=true;save("pasosBajos");render();return}
  if(ds.delev){c.eventos=c.eventos.filter(x=>x.id!==ds.delev);save("eventos");render();return}
  if(ds.approve!==undefined){const v=+ds.approve;c.kcalAprobadas=v>0?v:null;save("kcalAprobadas");render();S.flash(v>0?`Aprobado: ${v} kcal/día de media`:"Plan base restaurado");return}
  if(ds.wseg){collectWiz();S.wiz.data[ds.wseg]=ds.v;render();return}
- if(ds.wmulti){collectWiz();const v=+ds.v;const a=S.wiz.data[ds.wmulti]||[];S.wiz.data[ds.wmulti]=a.includes(v)?a.filter(x=>x!==v):[...a,v];render();return}
- if(ds.wnav){collectWiz();const St=stepsFor();const s=S.wiz.step+ +ds.wnav;if(s<0){wizDraft();S.wiz=null;render();return}if(s>=St.length){wizFinish();return}S.wiz.step=s;wizDraft();render();window.scrollTo(0,0);return}
+ if(ds.wmulti){collectWiz();const v=isNaN(+ds.v)?ds.v:+ds.v;const a=S.wiz.data[ds.wmulti]||[];S.wiz.data[ds.wmulti]=a.includes(v)?a.filter(x=>x!==v):[...a,v];render();return}
+ if(ds.wnav){collectWiz();const St=stepsFor();if(+ds.wnav>0&&S.wiz.client){const q=St[S.wiz.step].req;const m=q&&q(S.wiz.data);if(m){S.flash(m);return}}const s=S.wiz.step+ +ds.wnav;if(s<0){wizLeave();return}if(s>=St.length){wizFinish();return}S.wiz.step=s;wizDraft();render();window.scrollTo(0,0);return}
  if(ds.cqseg){c.cuestionario.resp[ds.cqseg]=ds.v;save("cuestionario");render();return}
  if(ds.addmeal){const ms=getMeals(c,ds.addmeal);const nm=["Desayuno","Media mañana","Post-entreno","Comida","Merienda","Cena","Recena"].find(x=>!ms.some(m=>m[0]===x))||"Comida extra";ms.push([nm,[["pollo",100]]]);saveMeals(ds.addmeal);render();return}
  if(ds.additem){const[k,mi]=ds.additem.split(",");path(c,k,+mi)[1].push(["pollo",100]);saveMeals(k);render();return}
@@ -755,6 +881,8 @@ function onClick(e){
  const act=ds.act;if(!act)return;
  if(act==="wizstart"){wizStart(c,false);window.scrollTo(0,0);return}
  if(act==="wizreview"){wizStart(c,true);window.scrollTo(0,0);return}
+ if(act==="cycreg"){cycMark(c,TODAY);S.cycOtro=false;cycCache(c);save("ciclo");render();S.flash("Apuntada. Tu ciclo empieza de nuevo");return}
+ if(act==="cycotro"){S.cycOtro=!S.cycOtro;render();return}
  if(act==="qedit"){S.qedit=true;render();return}
  if(act==="qsend"){const q=c.cuestionario;if(!q.comidas.some(m=>m.on&&m.texto.trim())){S.flash("Cuéntanos al menos una comida");return}
   q.estado=q.estado==="convertido"?"convertido":"enviado";q.fecha=TODAY;S.qedit=false;save("cuestionario");S.ctab=q.resp.dieta==="si"&&c.dietaExt.estado==="ninguna"?"dieta":"inicio";render();S.flash(S.ctab==="dieta"?"¡Gracias! Ahora pásanos tu dieta":"¡Enviado a tu entrenador!");return}
@@ -779,7 +907,8 @@ function onChange(e){
  if(ds.tr){c.trabajo=c.trabajo||{};c.trabajo[ds.tr]=t.type==="number"?(parseFloat(t.value)||0):t.value;save("trabajo");render();return}
  if(ds.rule){c.reglas[ds.rule]=Math.max(0,parseFloat(t.value)||0);save("reglas");render();return}
  if(ds.rulesel){c.reglas[ds.rulesel]=t.value;save("reglas");render();return}
- if(ds.cyc){c.ciclo[ds.cyc]=ds.cyc==="len"?(parseInt(t.value)||28):t.value;save("ciclo");render();return}
+ if(ds.wchk){S.wiz.data[ds.wchk]=t.checked;return}
+ if(ds.cyc){if(ds.cyc==="inicio"&&!t.value){render();return}if(ds.cyc==="inicio"){const st=cycStarts(c);st.pop();c.ciclo.hist=[...new Set([...st,t.value])].sort();c.ciclo.inicio=c.ciclo.hist[c.ciclo.hist.length-1]}else c.ciclo[ds.cyc]=ds.cyc==="len"?(parseInt(t.value)||28):t.value;cycCache(c);save("ciclo");render();return}
  if(ds.cqon!==undefined){c.cuestionario.comidas[+ds.cqon].on=t.checked;save("cuestionario");render();return}
  if(ds.cqhora!==undefined){c.cuestionario.comidas[+ds.cqhora].hora=t.value;save("cuestionario");return}
  if(ds.cqtxt!==undefined){c.cuestionario.comidas[+ds.cqtxt].texto=t.value;save("cuestionario");return}
@@ -805,6 +934,7 @@ function onSubmit(f){
  if(kind==="perim"){const m={fecha:v("fecha")||TODAY};PERIM.forEach(([k])=>{const x=parseFloat(String(v(k)).replace(",","."));if(x)m[k]=x});c.perim=c.perim.filter(p=>p.fecha!==m.fecha);c.perim.push(m);c.perim.sort((a,b)=>a.fecha<b.fecha?-1:1);save("perim");render();S.flash("Medidas guardadas");return}
  if(kind==="ev"){const desc=v("desc").trim();if(!desc)return;const fecha=f.dataset.date,comida=v("comida");c.eventos=c.eventos.filter(e=>!(e.fecha===fecha&&e.comida===comida));
   c.eventos.push({id:"e"+Date.now(),fecha,comida,desc,kcal:+v("kcal"),registrado:v("reg")==="1"});save("eventos");render();S.flash("Añadido. Mira cómo queda tu día");return}
+ if(kind==="cicloini"){const d=v("fecha");if(!d||d>TODAY)return;if(!c.ciclo){const e=(c.entrevistaCli||{}).data||{};c.ciclo={regular:e.cicloRegular!=="no",len:+e.cicloLen||28,sangrado:+e.sangrado||5,inicio:d,anticonceptivo:e.anticonceptivo==="si"}}cycMark(c,d);S.cycOtro=false;cycCache(c);save("ciclo");render();S.flash("Regla apuntada");return}
  if(kind==="checkin"){const ci={};["hambre","energia","sueno","estres","adherencia"].forEach(k=>{const x=v(k);if(x!=="")ci[k]=+x});c.checkins[weekStart(TODAY)]=ci;save("checkins");render();S.flash("¡Gracias!");return}
 }
 function collectWiz(){S.root.querySelectorAll("[data-w]").forEach(el=>{S.wiz.data[el.dataset.w]=el.value})}
