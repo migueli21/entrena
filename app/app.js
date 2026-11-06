@@ -300,7 +300,24 @@
     return fmt(a) + " – " + fmt(b);
   }
   function week() { return ST.PLAN.semanas[UI.w]; }
-  function day() { var w = week(); if (UI.d >= w.dias.length) UI.d = 0; return w.dias[UI.d] || { nombre: "", ej: [] }; }
+  function day() {
+    var w = week();
+    if (UI.d >= 100) { var X = ST.LOG[UI.w + "-" + UI.d]; if (X && !X.borrado) return { nombre: X.nombre || "Entreno extra", ej: [], libre: true }; UI.d = 0; }
+    if (UI.d >= w.dias.length) UI.d = 0; return w.dias[UI.d] || { nombre: "", ej: [] };
+  }
+  // Lo no pautado va en el registro del cliente, no en el plan: L.extra (ejercicios) y días 100+ (entrenos sueltos)
+  function dayEx(d) { var L = ST.LOG[logKey()]; return d.ej.concat((L && L.extra) || []); }
+  function extraDays(w) {
+    return Object.keys(ST.LOG).map(function (k) { var p = k.split("-"); return { w: +p[0], d: +p[1], L: ST.LOG[k] }; })
+      .filter(function (x) { return x.w === w && x.d >= 100 && !x.L.borrado; }).sort(function (a, b) { return a.d - b.d; });
+  }
+  function todayISO() { var d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }
+  function newExtraDay() {
+    var n = 100; extraDaysAll().forEach(function (x) { if (x.w === UI.w && x.d >= n) n = x.d + 1; });
+    ST.LOG[UI.w + "-" + n] = { fecha: todayISO(), nombre: "Entreno extra", sesion: {}, ej: {}, extra: [] };
+    UI.d = n; addOpen = true; persist(); render(); window.scrollTo(0, 0);
+  }
+  function extraDaysAll() { return Object.keys(ST.LOG).map(function (k) { var p = k.split("-"); return { w: +p[0], d: +p[1], L: ST.LOG[k] }; }).filter(function (x) { return x.d >= 100; }); }
   function logKey() { return UI.w + "-" + UI.d; }
   function dayLog() { var k = logKey(); if (!ST.LOG[k]) ST.LOG[k] = { fecha: "", sesion: {}, ej: {} }; return ST.LOG[k]; }
   function exLog(ex) { var L = dayLog(); if (!L.ej) L.ej = {}; if (!L.ej[ex.id]) L.ej[ex.id] = { com: "", s: [] }; return L.ej[ex.id]; }
@@ -348,19 +365,22 @@
     } else if (UI.view === "progresion" && !ST.editing) {
       kids.push(progressionView());
     } else {
+      if (ST.editing && UI.d >= 100) UI.d = 0;
       kids.push(nav());
-      var d = day();
+      var d = day(), list = ST.editing ? d.ej : dayEx(d);
       var main = el("main", { class: "day" + (ST.readOnly ? " ro" : "") });
       if (ST.editing) main.appendChild(editDayHead(d));
       else main.appendChild(dateRow());
+      if (d.libre && !ST.editing) main.appendChild(extraHead());
       if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = "nutri"; render(); window.scrollTo(0, 0); } }));
-      if (!d.ej.length && !ST.editing) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
-      d.ej.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
+      if (!list.length && !ST.editing && !d.libre) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
+      list.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
+      if (!ST.editing && !ST.readOnly) main.appendChild(addExtraBlock());
       if (ST.editing) {
         main.appendChild(el("button", { class: "btn ghost wide", type: "button", text: "+ Añadir ejercicio", onclick: function () {
           d.ej.push({ id: uid(), n: "Nuevo ejercicio", uni: false, nota: "", g: [], series: [{ r: "8-10", d: "2 min" }] }); ST.dirty = true; render();
         } }));
-      } else if (d.ej.length) {
+      } else if (list.length) {
         main.appendChild(sessionBlock());
         main.appendChild(progressBlock());
         if (!ST.readOnly) main.appendChild(finishBlock());
@@ -414,6 +434,15 @@
         el("span", { class: "dname", text: d.nombre || "" })
       ]));
     });
+    if (!ST.editing) extraDays(UI.w).forEach(function (x) {
+      days.appendChild(el("button", { type: "button", role: "tab", "aria-selected": String(x.d === UI.d), class: "daytab extra" + (x.d === UI.d ? " on" : ""),
+        onclick: function () { UI.d = x.d; render(); window.scrollTo(0, 0); } }, [
+        el("span", { class: "dnum", text: "Extra" + (x.L.terminado ? " ✓" : "") }),
+        el("span", { class: "dname", text: x.L.nombre || "Entreno extra" })
+      ]));
+    });
+    if (!ST.editing && !ST.readOnly) days.appendChild(el("button", { type: "button", class: "daytab addday", onclick: newExtraDay }, [
+      el("span", { class: "dnum", text: "+ Extra" }), el("span", { class: "dname", text: "Entreno no pautado" })]));
     return el("nav", { class: "nav" }, [weeks, days]);
   }
   function dateRow() {
@@ -433,7 +462,7 @@
       el("span", { class: "idx", text: String(i + 1) }),
       el("div", { class: "titles" }, [
         el("h2", { text: ex.n }),
-        el("p", { class: "meta", text: ex.series.length + " series" + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") })
+        el("p", { class: "meta", text: (ex.extra ? "No pautado · " : "") + ex.series.length + " series" + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") })
       ])
     ]));
     if (ex.nota) c.appendChild(el("p", { class: "note", text: ex.nota }));
@@ -444,7 +473,7 @@
       function upd(k) { return function (v) { S[k] = v; row.classList.toggle("filled", !!S.reps); persist(); }; }
       row.appendChild(el("div", { class: "sethead" }, [
         el("span", { class: "sn", text: "Serie " + (si + 1) }),
-        el("span", { class: "obj" }, [el("b", { text: s.r }), " reps"]),
+        s.r ? el("span", { class: "obj" }, [el("b", { text: s.r }), " reps"]) : null,
         el("span", { class: "rest", text: s.d ? "Descanso " + s.d : "" })
       ]));
       if (ex.uni) row.appendChild(el("div", { class: "grid2" }, [
@@ -465,7 +494,55 @@
     var ta = el("textarea", { rows: "2", placeholder: ST.readOnly ? "" : "¿Cómo te ha ido este ejercicio? Molestias, sensaciones…", oninput: function () { E.com = ta.value; persist(); } });
     ta.value = E.com || ""; if (ST.readOnly) ta.disabled = true;
     c.appendChild(field("Comentario del ejercicio", ta, "block"));
+    if (ex.extra && !ST.readOnly) c.appendChild(el("div", { class: "extraacts" }, [
+      el("button", { class: "btn ghost", type: "button", text: "+ Añadir serie", onclick: function () { ex.series.push({ r: "", d: "" }); persist(); render(); } }),
+      el("button", { class: "btn ghost danger", type: "button", text: "Quitar ejercicio", onclick: function () {
+        if (!window.confirm("¿Quitar «" + ex.n + "» y lo que has apuntado en él?")) return;
+        var L = dayLog(); L.extra = (L.extra || []).filter(function (e) { return e.id !== ex.id; }); if (L.ej) delete L.ej[ex.id]; persist(); render();
+      } })
+    ]));
     return c;
+  }
+  var addOpen = false;
+  function extraHead() {
+    var L = dayLog();
+    var nm = input({ type: "text", value: L.nombre || "", placeholder: "Por ejemplo: Cardio, partido, brazos…", oninput: function () { L.nombre = nm.value; persist(); } });
+    return el("section", { class: "card" }, [
+      el("h2", { text: "Entreno no pautado" }),
+      el("p", { class: "meta", text: ST.readOnly ? "Lo ha añadido el cliente por su cuenta." : (CFG.ENTRENADOR || "Tu entrenador") + " lo verá marcado como extra." }),
+      field("Nombre del entreno", nm, "block"),
+      ST.readOnly ? null : el("button", { class: "btn ghost danger", type: "button", text: "Quitar este entreno", onclick: function () {
+        if (!window.confirm("¿Quitar este entreno y lo que has apuntado en él?")) return;
+        L.borrado = true; persist(); UI.d = 0; render(); window.scrollTo(0, 0);
+      } })
+    ]);
+  }
+  function addExtraBlock() {
+    if (!addOpen) return el("button", { class: "btn ghost wide", type: "button", text: "+ Añadir ejercicio no pautado", onclick: function () { addOpen = true; render(); } });
+    var names = {}; ST.PLAN.semanas.forEach(function (w) { w.dias.forEach(function (d) { d.ej.forEach(function (e) { names[e.n] = true; }); }); });
+    var dl = el("datalist", { id: "exnames" }, Object.keys(names).sort().map(function (n) { return el("option", { value: n }); }));
+    var nm = el("input", { type: "text", list: "exnames", placeholder: "Nombre del ejercicio", autocomplete: "off" });
+    var v = { g: "", n: "3", u: "no" };
+    var err = el("p", { class: "err" });
+    return el("section", { class: "card" }, [
+      el("h2", { text: "Añadir ejercicio no pautado" }), dl,
+      field("Ejercicio", nm, "block"),
+      el("div", { class: "grid3" }, [
+        field("Grupo", select(GROUPS, "", function (x) { v.g = x; }, "Sin grupo")),
+        field("Series", select(range(1, 8), "3", function (x) { v.n = x; })),
+        field("Tipo", select([{ v: "no", t: "Bilateral" }, { v: "si", t: "Unilateral" }], "no", function (x) { v.u = x; }))
+      ]),
+      err,
+      el("div", { class: "extraacts" }, [
+        el("button", { class: "btn primary", type: "button", text: "Añadir", onclick: function () {
+          var n = nm.value.trim(); if (!n) { err.textContent = "Escribe el nombre del ejercicio."; return; }
+          var L = dayLog(); L.extra = L.extra || [];
+          L.extra.push({ id: "x" + uid(), n: n, uni: v.u === "si", nota: "", g: v.g ? [v.g] : [], extra: true, series: range(1, +v.n || 3).map(function () { return { r: "", d: "" }; }) });
+          addOpen = false; persist(); render();
+        } }),
+        el("button", { class: "btn ghost", type: "button", text: "Cancelar", onclick: function () { addOpen = false; render(); } })
+      ])
+    ]);
   }
   function sessionBlock() {
     var L = dayLog(); if (!L.sesion) L.sesion = {}; var S = L.sesion;
@@ -518,7 +595,7 @@
   }
   function progressBlock() {
     var d = day(), anyPrev = false;
-    var rows = d.ej.map(function (ex) {
+    var rows = dayEx(d).map(function (ex) {
       var now = exStats(UI.w, UI.d, ex), p = findPrev(ex);
       if (p) anyPrev = true;
       function cell(v, pv, unit, f) {
@@ -547,9 +624,18 @@
         done[g][di] = (done[g][di] || 0) + st.sets / div;
       });
     }); });
+    var xi = dias.length, hasX = false;
+    Object.keys(ST.LOG).forEach(function (k) {
+      var p = k.split("-"), L = ST.LOG[k]; if (+p[0] !== w || L.borrado) return;
+      (L.extra || []).forEach(function (ex) {
+        var div = ex.uni ? 2 : 1, st = exStats(w, +p[1], ex); if (!st.sets) return; hasX = true;
+        groupsOf(ex).forEach(function (g) { used[g] = true; plan[g] = plan[g] || []; done[g] = done[g] || []; done[g][xi] = (done[g][xi] || 0) + st.sets / div; });
+      });
+    });
     var groups = GROUPS.concat(["Sin grupo"]).filter(function (g) { return used[g]; });
     var head = [el("th", { text: "Grupo" })];
     dias.forEach(function (d, i) { head.push(el("th", { text: "Día " + (i + 1) })); });
+    if (hasX) head.push(el("th", { text: "Extra" }));
     head.push(el("th", { class: "tot", text: "Semana" }));
     var max = 0; groups.forEach(function (g) { max = Math.max(max, sum(plan[g])); });
     var body = groups.map(function (g) {
@@ -558,6 +644,7 @@
         var p = (plan[g] || [])[i] || 0, h = (done[g] || [])[i] || 0;
         tds.push(el("td", { class: p ? (h >= p ? "full" : h > 0 ? "part" : "") : "zero" }, p ? [el("b", { text: num(h) }), el("small", { text: "/" + num(p) })] : ["·"]));
       });
+      if (hasX) { var hx = (done[g] || [])[xi] || 0; tds.push(el("td", { class: hx ? "full" : "zero" }, hx ? [el("b", { text: num(hx) })] : ["·"])); }
       var tp = sum(plan[g]), th = sum(done[g]);
       tds.push(el("td", { class: "tot" }, [el("b", { text: num(th) }), el("small", { text: "/" + num(tp) }),
         el("div", { class: "bar" }, [el("i", { style: "width:" + (max ? tp / max * 100 : 0) + "%" }, [el("u", { style: "width:" + (tp ? Math.min(100, th / tp * 100) : 0) + "%" })])])]));
@@ -660,6 +747,20 @@
         ]));
       });
     });
+    var xs = [];
+    Object.keys(ST.LOG).forEach(function (k) {
+      var p = k.split("-"), L = ST.LOG[k]; if (L.borrado) return;
+      (L.extra || []).forEach(function (ex) { var st = exStats(+p[0], +p[1], ex); if (st.any) xs.push({ w: +p[0], f: L.fecha || "", ex: ex, st: st, ses: +p[1] >= 100 ? (L.nombre || "Entreno extra") : "Día " + (+p[1] + 1) }); });
+    });
+    if (xs.length) {
+      xs.sort(function (a, b) { return a.w - b.w || (a.f < b.f ? -1 : 1); });
+      main.appendChild(el("h3", { class: "dayhead", text: "No pautado" }));
+      main.appendChild(el("section", { class: "card" }, [el("div", { class: "tablewrap" }, [el("table", { class: "ptable" }, [
+        el("thead", null, [el("tr", null, [el("th", { text: "Ejercicio" }), el("th", { text: "Cuándo" }), el("th", { text: "Series" }), el("th", { text: "Kg máx" })])]),
+        el("tbody", null, xs.map(function (x) {
+          return el("tr", null, [el("th", { scope: "row", text: x.ex.n }), el("td", { text: "S" + (x.w + 1) + " · " + x.ses }), el("td", { text: String(x.st.sets) }), el("td", { text: x.st.kg ? num(x.st.kg) : "—" })]);
+        }))])])]));
+    }
     return main;
   }
 
