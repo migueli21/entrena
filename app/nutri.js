@@ -702,7 +702,7 @@ function wizardHTML(){
  const field=([k,l,type,extra,cond])=>{
   if(k==="nombre"||k.startsWith("_"))return"";
   if(cond&&!cond(d))return"";
-  if(type==="check")return`<label class="ncheck nwide"><input type="checkbox" data-wchk="${k}"${d[k]?" checked":""}><span>${l}</span></label>`;
+  if(type==="check")return`<button type="button" class="ncheck nwide" role="checkbox" aria-checked="${!!d[k]}" data-wchk="${k}"><i aria-hidden="true">${d[k]?"✓":""}</i><span>${l}</span></button>`;
   if(type==="seg")return`<div class="nwide"><span class="nq">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wseg="${k}" data-v="${v}" aria-pressed="${d[k]===v}">${t}</button>`).join("")}</div></div>`;
   if(type==="multi")return`<div class="nwide"><span class="nq">${l}</span><div class="nseg">${extra.map(([v,t])=>`<button type="button" data-wmulti="${k}" data-v="${esc(v)}" aria-pressed="${(d[k]||[]).includes(v)}">${t}</button>`).join("")}</div></div>`;
   if(type==="area")return`<label class="nf nwide">${l}${extra?` <small>${extra}</small>`:""}<textarea data-w="${k}">${esc(d[k])}</textarea></label>`;
@@ -869,6 +869,7 @@ function onClick(e){
  if(ds.lowsteps){if(c.pasosBajos[ds.lowsteps])delete c.pasosBajos[ds.lowsteps];else c.pasosBajos[ds.lowsteps]=true;save("pasosBajos");render();return}
  if(ds.delev){c.eventos=c.eventos.filter(x=>x.id!==ds.delev);save("eventos");render();return}
  if(ds.approve!==undefined){const v=+ds.approve;c.kcalAprobadas=v>0?v:null;save("kcalAprobadas");render();S.flash(v>0?`Aprobado: ${v} kcal/día de media`:"Plan base restaurado");return}
+ if(ds.wchk){collectWiz();S.wiz.data[ds.wchk]=!S.wiz.data[ds.wchk];render();return}
  if(ds.wseg){collectWiz();S.wiz.data[ds.wseg]=ds.v;render();return}
  if(ds.wmulti){collectWiz();const v=isNaN(+ds.v)?ds.v:+ds.v;const a=S.wiz.data[ds.wmulti]||[];S.wiz.data[ds.wmulti]=a.includes(v)?a.filter(x=>x!==v):[...a,v];render();return}
  if(ds.wnav){collectWiz();const St=stepsFor();if(+ds.wnav>0&&S.wiz.client){const q=St[S.wiz.step].req;const m=q&&q(S.wiz.data);if(m){S.flash(m);return}}const s=S.wiz.step+ +ds.wnav;if(s<0){wizLeave();return}if(s>=St.length){wizFinish();return}S.wiz.step=s;wizDraft();render();window.scrollTo(0,0);return}
@@ -907,7 +908,6 @@ function onChange(e){
  if(ds.tr){c.trabajo=c.trabajo||{};c.trabajo[ds.tr]=t.type==="number"?(parseFloat(t.value)||0):t.value;save("trabajo");render();return}
  if(ds.rule){c.reglas[ds.rule]=Math.max(0,parseFloat(t.value)||0);save("reglas");render();return}
  if(ds.rulesel){c.reglas[ds.rulesel]=t.value;save("reglas");render();return}
- if(ds.wchk){S.wiz.data[ds.wchk]=t.checked;return}
  if(ds.cyc){if(ds.cyc==="inicio"&&!t.value){render();return}if(ds.cyc==="inicio"){const st=cycStarts(c);st.pop();c.ciclo.hist=[...new Set([...st,t.value])].sort();c.ciclo.inicio=c.ciclo.hist[c.ciclo.hist.length-1]}else c.ciclo[ds.cyc]=ds.cyc==="len"?(parseInt(t.value)||28):t.value;cycCache(c);save("ciclo");render();return}
  if(ds.cqon!==undefined){c.cuestionario.comidas[+ds.cqon].on=t.checked;save("cuestionario");render();return}
  if(ds.cqhora!==undefined){c.cuestionario.comidas[+ds.cqhora].hora=t.value;save("cuestionario");return}
