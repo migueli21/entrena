@@ -80,14 +80,25 @@ function cycTip(c,d,ph){const k=c.ciclo;
  if(ph==="rt")return`Tu regla se retrasa ${d-(k.len||28)} día${d-(k.len||28)===1?"":"s"}. Márcala cuando llegue. Si se repite, coméntalo con tu entrenador.`;
  if(ph==="ac")return"Con anticonceptivo hormonal no calculamos fases, porque dependen del método. Lo útil es apuntar cómo te sientes.";
  if(ph==="ir")return"Con un ciclo irregular no predecimos fechas. Marca tu regla cuando llegue y apunta cómo te sientes.";
- if(ph==="m")return"Si hoy estás peor, ajusta el cómo: baja peso o series, pero no lo dejes a cero. La báscula puede marcar más por el agua.";
+ if(ph==="m")return"La báscula puede marcar algo más estos días por el agua: no es grasa.";
  if(ph==="pm")return"Puedes retener algo de líquido y tener más hambre. No tomes decisiones por la báscula estos días.";
  return"Entrena como tienes pautado. Apunta cómo te sientes: en dos o tres meses veremos tu patrón."}
+/* Consejos por fase (contrastados en PubMed, nov 2026): solo alimentos, nunca suplementos */
+const CYC_ADV={
+ m:["Hierro con vitamina C en la misma comida: lentejas, carne o mejillones con pimiento, tomate o una naranja. Si tienes dolor, prueba una infusión de jengibre y pescado azul estos días.","Moverte suele aliviar el dolor de regla. Si hoy estás peor, baja peso o series, pero no lo dejes a cero."],
+ fo:["Tu plan de siempre. Si la regla fue abundante, sigue unos días con el hierro y la vitamina C.","Si te notas con energía, aprovecha: intenta sumar una repetición o un poco de peso."],
+ ov:["Tu plan de siempre.","Entrena como tienes pautado y calienta bien. Si te notas fuerte, aprovecha."],
+ lu:["Es normal tener algo más de hambre. Mete proteína y fibra en cada comida (yogur, huevos, legumbres, verdura) para llegar saciada.","Puede que notes más calor o que te cueste más: bebe más agua y respeta tu RIR en vez de forzar."],
+ pm:["Alimentos con calcio y vitamina B6 ayudan con el ánimo de estos días: yogur o queso, legumbres, plátano, pescado. Si tienes antojo, déjalo planeado: unas onzas de chocolate negro con fruta.","Si estás más cansada, mantén el entreno y deja una o dos repeticiones más en la recámara."],
+ gen:["Proteína y fibra en cada comida. En los días de regla, hierro con vitamina C.","Apunta cómo te sientes cada día: así ajustamos tu plan a ti."]};
+const CYC_SADV={dolor:"Para el dolor: infusión de jengibre y moverte suave (caminar, movilidad).",hambre:"¿Más hambre? Añade una ración de proteína o fruta antes de tirar de picoteo.",cansancio:"Hoy deja una repetición más en la recámara y prioriza dormir.",sueno:"Hoy deja una repetición más en la recámara y prioriza dormir.",hinchazon:"La hinchazón es agua, no grasa: hoy no te fíes de la báscula.",humor:"Yogur, legumbres o plátano: el calcio y la B6 ayudan con el ánimo premenstrual."};
+function cycAdvHTML(ph,sint){const a=CYC_ADV[ph]||CYC_ADV.gen;const ex=[...new Set((sint||[]).map(x=>CYC_SADV[x==="dolorf"?"dolor":x]).filter(Boolean))].slice(0,2);
+ return`<div class="ncycadv"><div><b>🍽️ En tu plato</b><span>${a[0]}</span></div><div><b>🏋️ En tu entreno</b><span>${a[1]}</span></div>${ex.length?`<div class="hoy"><b>Por cómo estás hoy</b>${ex.map(x=>`<span>${x}</span>`).join("")}</div>`:""}</div>`}
 function cycPattern(c){const log=c.cicloLog||{},G={};Object.keys(log).forEach(date=>{const ph=cyclePhase(c,cycleDay(c,date))[0];if(!CYC_GRUPOS.some(g=>g[0]===ph))return;const r=log[date];const g=G[ph]=G[ph]||{n:0,e:0,en:0,s:{}};g.n++;if(r.e){g.e+=r.e;g.en++}(r.s||[]).forEach(x=>{g.s[x]=(g.s[x]||0)+1})});
  return CYC_GRUPOS.filter(([k])=>G[k]).map(([k,l])=>{const g=G[k];const top=Object.entries(g.s).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([x])=>(CYC_SINT.find(y=>y[0]===x)||[0,x])[1]);return{k,l,n:g.n,e:g.en?g.e/g.en:null,top}})}
 function cycPatternHTML(c,tu){const P=cycPattern(c);const dias=P.reduce((a,p)=>a+p.n,0);const ciclos=Math.max(0,cycStarts(c).length-1);
  if(dias<5)return`<p class="nsmall nmuted">${tu?"Cuando lleves unos días apuntados, aquí verás tu patrón.":"Aún hay pocos días apuntados para ver un patrón."}</p>`;
- return`<h3>${tu?"Tu patrón":"Su patrón"}</h3><div class="ntbl"><table class="nmini"><thead><tr><th>Fase</th><th>Días</th><th>Energía</th><th>Lo más frecuente</th></tr></thead><tbody>${P.map(p=>`<tr><td>${p.l}</td><td>${p.n}</td><td>${p.e===null?"—":String(r1(p.e)).replace(".",",")+" / 5"}</td><td>${p.top.map(esc).join(", ")||"—"}</td></tr>`).join("")}</tbody></table></div>
+ return`<h3>${tu?"Tu patrón":"Su patrón"}</h3><div class="ntbl"><table class="nmini"><thead><tr><th>Fase</th><th>Días</th><th>Energía</th><th>Lo más frecuente</th></tr></thead><tbody>${P.map(p=>`<tr><td>${p.l}</td><td>${p.n}</td><td style="white-space:nowrap">${p.e===null?"—":String(r1(p.e)).replace(".",",")+"/5"}</td><td>${p.top.map(esc).join(", ")||"—"}</td></tr>`).join("")}</tbody></table></div>
  ${ciclos<2?'<p class="nsmall nmuted">Orientativo: el patrón se ve con dos o tres meses de datos.</p>':""}`}
 function cycHistHTML(c,del){const st=cycStarts(c).slice().reverse().slice(0,6);const g=[];const all=cycStarts(c);for(let i=1;i<all.length;i++)g.push(diffD(all[i-1],all[i]));
  return`<h3>Últimas reglas</h3><ul class="ncychist">${st.map((x,i)=>`<li><span>${fmtD(x)}</span><span class="nmuted">${i>0&&g[g.length-i]?g[g.length-i]+" días hasta la siguiente":""}</span>${del&&all.length>1?`<button type="button" class="nlink" data-cycdel="${x}" aria-label="Quitar la regla del ${fmtD(x)}">Quitar</button>`:""}</li>`).join("")}</ul>`}
@@ -410,8 +421,8 @@ function derive(c){
 const CYCC={};
 function cycCache(c){CYCC[c.id]={ciclo:c.ciclo}}
 function cycBannerFill(box,k,go){if(!k||!k.inicio){box.hidden=true;return}const c={ciclo:k};const d=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,d);
- box.hidden=false;box.innerHTML=`<b>Día ${d} · ${esc(lab)}</b><span>${cycTip(c,d,ph)}</span>`;
- if(go){const b=document.createElement("button");b.type="button";b.className="btn ghost small";b.textContent="Apuntar cómo estoy";b.onclick=go;box.appendChild(b)}}
+ box.hidden=false;box.innerHTML=`<b>Día ${d} · ${esc(lab)}</b><span>${cycTip(c,d,ph)}</span><span><b>🏋️ Hoy en tu entreno:</b> ${(CYC_ADV[ph]||CYC_ADV.gen)[1]}</span>`;
+ if(go){const b=document.createElement("button");b.type="button";b.className="btn ghost small";b.textContent="Qué comer y cómo estoy";b.onclick=go;box.appendChild(b)}}
 let S=null;const URLS={};const MINDIFF={},DEXDIFF={};
 window.EYLNutri={intakeCheck:function(o){const id=o.client.id;return Promise.all([o.sb.from("nutri_plan").select("data").eq("cliente_id",id).maybeSingle(),o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle()]).then(([a,b])=>{if(a.error||b.error)return false;return intakeNeed({...(a.data?a.data.data:{}),...(b.data?b.data.data:{})})},()=>false)},
  cycleBanner:function(o){const box=document.createElement("div");box.className="cycbanner";box.hidden=true;const id=o.client&&o.client.id;if(!id)return box;
@@ -774,7 +785,7 @@ function cCiclo(c){
  const k=c.ciclo,cd=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,cd),hoy=(c.cicloLog||{})[TODAY]||{},sint=hoy.s||[];
  return`<div class="npanel"><div class="nrow nbetween"><h2>Tu ciclo</h2><span class="nchip">Día ${cd}${k.regular===false||k.anticonceptivo?"":` de ${k.len||28}`} · ${lab}</span></div>
   ${cycBarHTML(c,cd)}
-  <p class="nsmall">${cycTip(c,cd,ph)}</p>${cycNext(c)?`<p class="nsmall nmuted">${cycNext(c)}</p>`:""}
+  <p class="nsmall">${cycTip(c,cd,ph)}</p>${cycAdvHTML(ph,sint)}${cycNext(c)?`<p class="nsmall nmuted">${cycNext(c)}</p>`:""}
   <div class="nrow"><button class="btn primary small" data-act="cycreg">Me ha bajado hoy</button><button class="btn ghost small" data-act="cycotro" aria-expanded="${!!S.cycOtro}">Fue otro día</button></div>
   ${S.cycOtro?`<form class="nrow" data-form="cicloini"><label class="nf" style="flex:1 1 140px">Primer día de la regla<input type="date" name="fecha" max="${TODAY}" required></label><button class="btn primary small" type="submit" style="align-self:end">Guardar</button></form>`:""}
   <h3>¿Cómo estás hoy?</h3>
