@@ -183,3 +183,16 @@ td small{font-family:var(--num);font-size:11px;color:var(--muted);display:block}
 .daytab.addday{border:1px dashed var(--line);border-radius:9px;border-bottom:1px dashed var(--line);padding:6px 10px}
 .extraacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .extraacts .btn{flex:1 1 140px}
+.coachwrite{display:flex;flex-direction:column;gap:2px;margin:0 0 12px;padding:10px 14px;border-radius:10px;border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--fg);font-size:14px}
+.coachwrite b{color:var(--warn);font-family:var(--display);letter-spacing:.02em;font-size:16px}
+.prep h2{margin:0;font-family:var(--display);font-size:20px;letter-spacing:.02em}
+.prepblock{border-top:1px solid var(--line);padding-top:8px}
+.prepblock summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center;gap:8px;list-style:none}
+.prepblock summary::-webkit-details-marker{display:none}
+.prepblock summary::after{content:"+";margin-left:auto;color:var(--accent);font-size:22px;line-height:1}
+.prepblock[open] summary::after{content:"–"}
+.prepkey{margin:0 0 8px;font-size:14px;color:var(--cream);background:var(--surface2);border-left:3px solid var(--warn);padding:6px 10px;border-radius:0 8px 8px 0}
+.preplist{margin:0 0 8px;padding-left:20px;display:grid;gap:6px;font-size:14px}
+.preplist li span{margin-right:6px}
+.preplist li b{white-space:nowrap;color:var(--accent);font-family:var(--num);font-size:13px}
+.prep .meta{margin:0 0 6px}

@@ -36,7 +36,7 @@
   // ================= STATE =================
   var ST = {
     me: null, profile: null, mode: null,      // mode: "cliente" | "entrenador"
-    clientId: null, client: null, PLAN: null, LOG: {}, readOnly: false,
+    clientId: null, client: null, PLAN: null, LOG: {}, readOnly: false, coachWrite: false,
     editing: false, dirty: false, clients: [], activity: {}
   };
   var UI = { w: 0, d: 0, view: "entreno" };
@@ -223,7 +223,7 @@
 
   // ================= OPEN CLIENT =================
   function openClient(c, asCoach) {
-    ST.client = c; ST.clientId = c.id; ST.readOnly = asCoach; ST.editing = false; ST.dirty = false;
+    ST.client = c; ST.clientId = c.id; ST.readOnly = asCoach; ST.coachWrite = false; ST.editing = false; ST.dirty = false;
     UI = lsGet("eyl-ui-" + c.id, { w: null, d: 0, view: "entreno" });
     loading();
     Promise.all([api.getPlan(c.id), api.getLogs(c.id)]).then(function (r) {
@@ -327,7 +327,7 @@
   function persist() {
     if (ST.readOnly) return;
     var k = logKey(); ST.LOG[k].editado = Date.now();
-    lsSet(cacheKey(), ST.LOG);
+    if (ST.coachWrite) ST.LOG[k].porEntrenador = Date.now(); else lsSet(cacheKey(), ST.LOG);
     queueSave(k);
     refreshProgress();
   }
@@ -352,7 +352,7 @@
     lsSet("eyl-ui-" + ST.clientId, UI);
     var kids = [];
     if (ST.mode === "entrenador") kids.push(topbar(el("button", { class: "backbtn", type: "button", text: "← Clientes", onclick: function () {
-      if (ST.dirty && !confirmLeave()) return; coachHome();
+      if (ST.dirty && !confirmLeave()) return; if (Object.keys(pending).length) flushSaves(); coachHome();
     } })));
     else kids.push(topbar());
     kids.push(header());
@@ -369,13 +369,17 @@
       kids.push(nav());
       var d = day(), list = ST.editing ? d.ej : dayEx(d);
       var main = el("main", { class: "day" + (ST.readOnly ? " ro" : "") });
+      if (ST.coachWrite && !ST.editing) main.appendChild(el("div", { class: "coachwrite", role: "status" }, [
+        el("b", { text: "Estás apuntando por " + (ST.client.nombre || "el cliente") }),
+        el("span", { text: "Lo que escribas se guarda en su registro y lo verá en su app." })]));
       if (ST.editing) main.appendChild(editDayHead(d));
       else main.appendChild(dateRow());
       if (d.libre && !ST.editing) main.appendChild(extraHead());
       if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = "nutri"; render(); window.scrollTo(0, 0); } }));
+      if (!ST.editing && list.length) main.appendChild(prepCard());
       if (!list.length && !ST.editing && !d.libre) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
       list.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
-      if (!ST.editing && !ST.readOnly) main.appendChild(addExtraBlock());
+      if (!ST.editing && !ST.readOnly && !ST.coachWrite) main.appendChild(addExtraBlock());
       if (ST.editing) {
         main.appendChild(el("button", { class: "btn ghost wide", type: "button", text: "+ Añadir ejercicio", onclick: function () {
           d.ej.push({ id: uid(), n: "Nuevo ejercicio", uni: false, nota: "", g: [], series: [{ r: "8-10", d: "2 min" }] }); ST.dirty = true; render();
@@ -405,7 +409,7 @@
     return el("header", { class: "top withseg" }, [
       el("div", { class: "logo", role: "img", "aria-label": "Logo de Entrena Your Life" }),
       el("div", { class: "tophead" }, [
-        el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: ST.mode === "entrenador" ? (ST.readOnly && !ST.editing ? "Viendo registros" : "Editando pauta") : "Entrena Your Life" })]),
+        el("div", { class: "brand" }, [el("span", { class: "mark", text: "EYL" }), el("span", { class: "brandname", text: ST.mode === "entrenador" ? (ST.editing ? "Editando pauta" : ST.coachWrite ? "Apuntando por el cliente" : "Viendo registros") : "Entrena Your Life" })]),
         el("h1", { text: ST.PLAN.cliente || (ST.client && ST.client.nombre) || "Tu entreno" }),
         ST.PLAN.objetivo ? el("p", { class: "goal", text: ST.PLAN.objetivo }) : null
       ]),
@@ -441,7 +445,7 @@
         el("span", { class: "dname", text: x.L.nombre || "Entreno extra" })
       ]));
     });
-    if (!ST.editing && !ST.readOnly) days.appendChild(el("button", { type: "button", class: "daytab addday", onclick: newExtraDay }, [
+    if (!ST.editing && !ST.readOnly && !ST.coachWrite) days.appendChild(el("button", { type: "button", class: "daytab addday", onclick: newExtraDay }, [
       el("span", { class: "dnum", text: "+ Extra" }), el("span", { class: "dname", text: "Entreno no pautado" })]));
     return el("nav", { class: "nav" }, [weeks, days]);
   }
@@ -452,7 +456,7 @@
       L.terminado ? el("span", { class: "done-badge", text: "Terminado " + fmtDT(L.terminado) }) : null,
       ST.readOnly ? null : el("span", { id: "sync", class: "meta" })
     ]);
-    return el("div", { class: "card", style: "padding:10px 14px" }, [el("label", { class: "daterow", for: "fecha" }, [el("span", { text: ST.readOnly ? "Fecha del entreno" : "Día que entrenas" }), inp]), right]);
+    return el("div", { class: "card", style: "padding:10px 14px" }, [el("label", { class: "daterow", for: "fecha" }, [el("span", { text: ST.readOnly ? "Fecha del entreno" : ST.coachWrite ? "Día que entrenó" : "Día que entrenas" }), inp]), right]);
   }
 
   function card(ex, i) {
@@ -544,6 +548,46 @@
       ])
     ]);
   }
+  // ================= ANTES DE EMPEZAR (movilidad + aproximación) =================
+  var MOVILIDAD = [
+    ["Gato-camello con respiración", "8"],
+    ["Rotación torácica a cuatro patas", "8 por lado"],
+    ["90/90 de cadera", "6 por lado"],
+    ["Flexor de cadera: rodilla apoyada y brazo arriba", "30 s por lado"],
+    ["Tobillo: rodilla a la pared", "10 por lado"],
+    ["Dislocaciones de hombro con banda o pica", "10"],
+    ["Deslizamientos en la pared (wall slides)", "10"],
+    ["Puente de glúteo", "10"]
+  ];
+  function prepCard() {
+    function block(key, title, kids) {
+      var stored = lsGet("eyl-prep-" + key, null);
+      var det = el("details", { class: "prepblock" }, [el("summary", null, [el("span", { text: title })])].concat(kids));
+      det.open = stored == null ? true : !!stored;
+      det.addEventListener("toggle", function () { lsSet("eyl-prep-" + key, det.open); });
+      return det;
+    }
+    var mov = el("ol", { class: "preplist" }, MOVILIDAD.map(function (m) { return el("li", null, [el("span", { text: m[0] }), el("b", { text: m[1] })]); }));
+    var apr = el("ol", { class: "preplist" }, [
+      el("li", null, [el("span", { text: "Serie 1 con el 50 % del peso de trabajo" }), el("b", { text: "× 10" })]),
+      el("li", null, [el("span", { text: "Serie 2 con el 70 %" }), el("b", { text: "× 5" })]),
+      el("li", null, [el("span", { text: "Serie 3 con el 85 % (solo en los pesados: hip thrust, prensa, press, peso muerto…)" }), el("b", { text: "× 2-3" })])
+    ]);
+    return el("section", { class: "card prep", "aria-label": "Antes de empezar" }, [
+      el("h2", { text: "Antes de empezar" }),
+      block("apr", "🔥 Series de aproximación: no empieces en frío", [
+        el("p", { class: "prepkey", text: "Sirven para calentar y preparar el movimiento, no para cansarte. Tienen que ser fáciles: si te fatigan, te quitan fuerza para las series buenas." }),
+        el("p", { class: "meta", text: "En el primer ejercicio de cada grupo muscular, antes de tus series:" }),
+        apr,
+        el("p", { class: "meta", text: "En los siguientes ejercicios del mismo grupo, basta con 1 serie ligera. Las aproximaciones no se apuntan: las series de la pauta empiezan después." })
+      ]),
+      block("mov", "🧘 Movilidad · 8-10 min, en casa o en el gimnasio", [
+        el("p", { class: "prepkey", text: "Es parte de tu plan, no un extra. Hazla antes de entrenar o en casa los días de descanso." }),
+        mov,
+        el("p", { class: "meta", text: "Sin dolor y sin forzar: busca moverte mejor, no llegar más lejos." })
+      ])
+    ]);
+  }
   function sessionBlock() {
     var L = dayLog(); if (!L.sesion) L.sesion = {}; var S = L.sesion;
     function upd(k) { return function (v) { S[k] = v; persist(); }; }
@@ -559,10 +603,10 @@
   function finishBlock() {
     var L = dayLog();
     var btn = el("button", { class: "btn primary wide", type: "button", text: L.terminado ? "Actualizar entreno" : "Terminar entreno", onclick: function () {
-      L.terminado = Date.now(); persist(); flushSaves(); flash("¡Entreno guardado! " + (CFG.ENTRENADOR || "Tu entrenador") + " ya lo puede ver.");
+      L.terminado = Date.now(); persist(); flushSaves(); flash(ST.coachWrite ? "Entreno guardado en el registro de " + (ST.client.nombre || "tu cliente") + "." : "¡Entreno guardado! " + (CFG.ENTRENADOR || "Tu entrenador") + " ya lo puede ver.");
       render();
     } });
-    return el("div", { class: "send" }, [btn, el("p", { class: "sent", text: "Todo se guarda solo mientras escribes. Al terminar, pulsa el botón para avisar de que has acabado." })]);
+    return el("div", { class: "send" }, [btn, el("p", { class: "sent", text: ST.coachWrite ? "Todo se guarda solo mientras escribes. Al terminar, pulsa el botón para marcar el entreno como hecho." : "Todo se guarda solo mientras escribes. Al terminar, pulsa el botón para avisar de que has acabado." })]);
   }
 
   // ================= STATS / PROGRESS / VOLUME =================
@@ -767,8 +811,20 @@
   // ================= COACH: EDIT PLAN =================
   function coachBar() {
     var bar = el("div", { class: "coachbar" });
-    if (!ST.editing) {
+    if (!ST.editing && ST.coachWrite) {
+      bar.appendChild(el("button", { class: "btn primary", type: "button", text: "Terminar de apuntar", onclick: function () {
+        if (Object.keys(pending).length) flushSaves();
+        ST.coachWrite = false; ST.readOnly = true; flash("Listo. Vuelves a ver sus registros."); render();
+      } }));
+    } else if (!ST.editing) {
       bar.appendChild(el("button", { class: "btn dark", type: "button", text: "Editar pauta", onclick: function () { ST.editing = true; UI.view = "entreno"; render(); } }));
+      bar.appendChild(el("button", { class: "btn ghost", type: "button", text: "Apuntar por el cliente", onclick: function () {
+        var b = this; b.disabled = true; b.textContent = "Cargando…";
+        api.getLogs(ST.clientId).then(function (rows) {
+          ST.LOG = {}; (rows || []).forEach(function (row) { ST.LOG[row.semana + "-" + row.dia] = row.data; });
+          ST.coachWrite = true; ST.readOnly = false; UI.view = "entreno"; render(); window.scrollTo(0, 0);
+        }, function (x) { b.disabled = false; b.textContent = "Apuntar por el cliente"; flash(errMsg(x)); });
+      } }));
       bar.appendChild(el("button", { class: "btn ghost", type: "button", text: ST.client.activo ? "Pausar acceso" : "Reactivar acceso", onclick: function () {
         var v = !ST.client.activo; api.updateClient(ST.clientId, { activo: v }).then(function () { ST.client.activo = v; flash(v ? "Acceso reactivado" : "Acceso pausado"); render(); }, function (x) { flash(errMsg(x)); });
       } }));
