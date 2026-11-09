@@ -459,46 +459,127 @@
     return el("div", { class: "card", style: "padding:10px 14px" }, [el("label", { class: "daterow", for: "fecha" }, [el("span", { text: ST.readOnly ? "Fecha del entreno" : ST.coachWrite ? "Día que entrenó" : "Día que entrenas" }), inp]), right]);
   }
 
+  // Serie de la última vez que se hizo este día (misma posición), para guiar al apuntar
+  function prevSet(ex, si) {
+    for (var w = UI.w - 1; w >= 0; w--) {
+      var dd = ST.PLAN.semanas[w] && ST.PLAN.semanas[w].dias[UI.d]; if (!dd) continue;
+      var m = dd.ej.filter(function (e) { return e.id === ex.id; })[0] || dd.ej.filter(function (e) { return e.n === ex.n; })[0];
+      var L = ST.LOG[w + "-" + UI.d], E = m && L && L.ej && L.ej[m.id];
+      if (!E || !E.s) continue;
+      var any = E.s.some(function (S) { return S && parseFloat(S.reps) > 0; });
+      if (!any) continue;
+      var S = E.s[si];
+      return S && parseFloat(S.reps) > 0 ? S : null;
+    }
+    return null;
+  }
+  // Ejercicios plegados (por día): se recuerdan en este móvil
+  function foldKey() { return "eyl-fold-" + ST.clientId + "-" + logKey(); }
+  function isFolded(ex) { return !!lsGet(foldKey(), {})[ex.id]; }
+  function setFolded(ex, v) { var f = lsGet(foldKey(), {}); if (v) f[ex.id] = 1; else delete f[ex.id]; lsSet(foldKey(), f); }
+  var TEC_CAMPOS = {
+    "Drop set": [["tkg", "Kg tras bajar", "decimal"], ["treps", "Reps de la bajada", "numeric"]],
+    "Rest-pause": [["tpausa", "Pausa (s)", "numeric"], ["treps", "Reps tras la pausa", "numeric"]],
+    "Cluster": [["tpausa", "Pausa entre bloques (s)", "numeric"], ["treps", "Reps por bloque", "numeric"]]
+  };
+  function tecBlock(S, save) {
+    var def = TEC_CAMPOS[S.tec]; if (!def) return null;
+    return el("div", { class: "grid2 tecx" }, def.map(function (f) {
+      var inp = input({ type: "number", inputmode: f[2], min: "0", step: f[2] === "decimal" ? "0.5" : "1", value: S[f[0]] || "", oninput: function () { S[f[0]] = inp.value; save(); } });
+      return field(f[1], inp);
+    }));
+  }
+  function kgTxt(x) { return String(Math.round(parseFloat(x) * 100) / 100).replace(".", ","); }
+  function setLabel(ex, si) {
+    if (!ex.uni) return "Serie " + (si + 1);
+    return "Serie " + (Math.floor(si / 2) + 1) + " · " + (si % 2 ? "2.º lado" : "1.er lado");
+  }
+  function seriesText(ex) {
+    var n = ex.series.length;
+    if (ex.uni) { var p = n / 2; return (p % 1 ? num(p) : p) + (p === 1 ? " serie" : " series") + " por lado (" + n + " filas)"; }
+    return n + (n === 1 ? " serie" : " series");
+  }
+  function foldSummary(ex) {
+    var st = exStats(UI.w, UI.d, ex), tot = ex.series.length, div = ex.uni ? 2 : 1;
+    if (!st.any) return "Sin apuntar";
+    return num(st.sets / div) + " de " + num(tot / div) + (ex.uni ? " series por lado" : " series") + (st.kg ? " · máx. " + kgTxt(st.kg) + " kg" : "");
+  }
+
   function card(ex, i) {
     var E = exLog(ex);
-    var c = el("section", { class: "card" });
-    c.appendChild(el("div", { class: "cardhead" }, [
+    var folded = isFolded(ex);
+    var c = el("section", { class: "card exc" + (folded ? " folded" : "") });
+    function toggle() {
+      var v = !c.classList.contains("folded");
+      setFolded(ex, v); c.classList.toggle("folded", v);
+      sum.textContent = foldSummary(ex);
+      head.setAttribute("aria-expanded", String(!v));
+      if (v) {
+        var nav = document.querySelector(".nav"), off = (nav ? Math.max(0, nav.getBoundingClientRect().bottom) : 0) + 8;
+        var top = c.getBoundingClientRect().top; if (top < off) window.scrollBy(0, top - off);
+      }
+    }
+    var sum = el("p", { class: "foldsum", text: foldSummary(ex) });
+    var head = el("div", { class: "cardhead foldable", role: "button", tabindex: "0", "aria-expanded": String(!folded), onclick: toggle,
+      onkeydown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } } }, [
       el("span", { class: "idx", text: String(i + 1) }),
       el("div", { class: "titles" }, [
         el("h2", { text: ex.n }),
-        el("p", { class: "meta", text: (ex.extra ? "No pautado · " : "") + ex.series.length + " series" + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") })
-      ])
-    ]));
-    if (ex.nota) c.appendChild(el("p", { class: "note", text: ex.nota }));
-    if (ex.link) c.appendChild(el("a", { class: "vid", href: ex.link, target: "_blank", rel: "noopener", text: "Ver vídeo del ejercicio" }));
+        el("p", { class: "meta", text: (ex.extra ? "No pautado · " : "") + seriesText(ex) + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") }),
+        sum
+      ]),
+      el("span", { class: "chev", "aria-hidden": "true", text: "▾" })
+    ]);
+    c.appendChild(head);
+    var body = el("div", { class: "exbody" });
+    c.appendChild(body);
+    if (ex.nota) body.appendChild(el("p", { class: "note", text: ex.nota }));
+    if (ex.link) body.appendChild(el("a", { class: "vid", href: ex.link, target: "_blank", rel: "noopener", text: "Ver vídeo del ejercicio" }));
     ex.series.forEach(function (s, si) {
       var S = setLog(ex, si);
       var row = el("div", { class: "set" + (S.reps ? " filled" : "") });
-      function upd(k) { return function (v) { S[k] = v; row.classList.toggle("filled", !!S.reps); persist(); }; }
+      function save() { row.classList.toggle("filled", !!S.reps); persist(); }
+      function upd(k) { return function (v) { S[k] = v; save(); }; }
       row.appendChild(el("div", { class: "sethead" }, [
-        el("span", { class: "sn", text: "Serie " + (si + 1) }),
+        el("span", { class: "sn", text: setLabel(ex, si) }),
         s.r ? el("span", { class: "obj" }, [el("b", { text: s.r }), " reps"]) : null,
         el("span", { class: "rest", text: s.d ? "Descanso " + s.d : "" })
       ]));
+      var P = prevSet(ex, si);
       if (ex.uni) row.appendChild(el("div", { class: "grid2" }, [
         field("Brazo / pierna", select(["Brazo", "Pierna"], S.lim, upd("lim"), "Elige")),
         field("Lado", select(["Izquierdo", "Derecho"], S.lado, upd("lado"), "Elige"))
       ]));
-      var reps = input({ type: "number", inputmode: "numeric", min: "0", step: "1", value: S.reps || "", placeholder: s.r, oninput: function () { upd("reps")(reps.value); } });
-      var kg = input({ type: "number", inputmode: "decimal", min: "0", step: "0.5", value: S.kg || "", placeholder: "kg", oninput: function () { upd("kg")(kg.value); } });
+      var reps = input({ type: "number", inputmode: "numeric", min: "0", step: "1", value: S.reps || "", placeholder: P ? String(P.reps) : s.r, oninput: function () { upd("reps")(reps.value); } });
+      var kg = input({ type: "number", inputmode: "decimal", min: "0", step: "0.5", value: S.kg || "", placeholder: P && P.kg ? String(P.kg) : "kg", oninput: function () { upd("kg")(kg.value); } });
+      if (P) {
+        var txt = "Semana pasada: " + P.reps + " reps" + (P.kg ? " × " + kgTxt(P.kg) + " kg" : "") + (P.rir !== undefined && P.rir !== "" ? " · RIR " + P.rir : "") + (ex.uni && P.lado ? " · " + P.lado.toLowerCase() : "");
+        if (ST.readOnly) row.appendChild(el("p", { class: "prevhint", text: txt }));
+        else row.appendChild(el("button", { type: "button", class: "prevhint", title: "Copiar reps y kilos de la semana pasada", onclick: function () {
+          reps.value = P.reps; S.reps = String(P.reps);
+          if (P.kg) { kg.value = P.kg; S.kg = String(P.kg); }
+          if (ex.uni) { if (P.lim && !S.lim) S.lim = P.lim; if (P.lado && !S.lado) S.lado = P.lado; }
+          save(); if (ex.uni) render();
+        } }, [el("span", { text: txt }), el("b", { text: "Usar" })]));
+      }
       row.appendChild(el("div", { class: "grid4" }, [
         field("Reps", reps), field("Kg", kg),
         field("RIR", select(range(0, 6).map(function (n) { return { v: n, t: n === 6 ? "6+" : String(n) }; }), S.rir, upd("rir"))),
         field("Fatiga", select(range(1, 10), S.fat, upd("fat")))
       ]));
       var com = input({ type: "text", value: S.com || "", placeholder: ST.readOnly ? "" : "Comentario (opcional)", oninput: function () { upd("com")(com.value); } });
-      row.appendChild(el("div", { class: "grid2 last" }, [field("Técnica", select(TECNICAS, S.tec, upd("tec"), "Ninguna")), field("Nota de la serie", com)]));
-      c.appendChild(row);
+      var tecWrap = el("div", { class: "tecwrap" }, [tecBlock(S, save)]);
+      row.appendChild(el("div", { class: "grid2 last" }, [field("Técnica", select(TECNICAS, S.tec, function (v) {
+        S.tec = v; save(); tecWrap.innerHTML = ""; var b = tecBlock(S, save); if (b) tecWrap.appendChild(b);
+      }, "Ninguna")), field("Nota de la serie", com)]));
+      row.appendChild(tecWrap);
+      body.appendChild(row);
     });
     var ta = el("textarea", { rows: "2", placeholder: ST.readOnly ? "" : "¿Cómo te ha ido este ejercicio? Molestias, sensaciones…", oninput: function () { E.com = ta.value; persist(); } });
     ta.value = E.com || ""; if (ST.readOnly) ta.disabled = true;
-    c.appendChild(field("Comentario del ejercicio", ta, "block"));
-    if (ex.extra && !ST.readOnly) c.appendChild(el("div", { class: "extraacts" }, [
+    body.appendChild(field("Comentario del ejercicio", ta, "block"));
+    body.appendChild(el("button", { class: "btn ghost foldbtn", type: "button", text: "✓ Plegar ejercicio", onclick: toggle }));
+    if (ex.extra && !ST.readOnly) body.appendChild(el("div", { class: "extraacts" }, [
       el("button", { class: "btn ghost", type: "button", text: "+ Añadir serie", onclick: function () { ex.series.push({ r: "", d: "" }); persist(); render(); } }),
       el("button", { class: "btn ghost danger", type: "button", text: "Quitar ejercicio", onclick: function () {
         if (!window.confirm("¿Quitar «" + ex.n + "» y lo que has apuntado en él?")) return;
@@ -645,8 +726,8 @@
       function cell(v, pv, unit, f) {
         return el("td", null, [el("b", { text: now.any ? f(v) : "—" }), p ? el("small", { text: "antes " + f(pv) }) : null, now.any && p ? delta(v, pv, unit) : null]);
       }
-      var k = function (x) { return x ? num(x) : "—"; }, n = function (x) { return String(x); };
-      return el("tr", null, [el("th", { scope: "row", text: ex.n }), cell(now.sets, p && p.st.sets, "", n), cell(now.reps, p && p.st.reps, "", n), cell(now.kg, p && p.st.kg, "kg", k)]);
+      var k = function (x) { return x ? num(x) : "—"; }, n = function (x) { return num(x); }, dv = ex.uni ? 2 : 1;
+      return el("tr", null, [el("th", { scope: "row", text: ex.n + (ex.uni ? " (por lado)" : "") }), cell(now.sets / dv, p && p.st.sets / dv, "", n),cell(now.reps, p && p.st.reps, "", n), cell(now.kg, p && p.st.kg, "kg", k)]);
     });
     return el("section", { class: "card progress", id: "progress" }, [
       el("h2", { text: ST.readOnly ? "Progreso" : "Tu progreso" }),

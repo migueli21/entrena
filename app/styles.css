@@ -196,3 +196,19 @@ td small{font-family:var(--num);font-size:11px;color:var(--muted);display:block}
 .preplist li span{margin-right:6px}
 .preplist li b{white-space:nowrap;color:var(--accent);font-family:var(--num);font-size:13px}
 .prep .meta{margin:0 0 6px}
+/* 9 nov 2026: plegar ejercicio, semana pasada, técnica */
+.exbody{display:grid;gap:10px;min-width:0}
+.card.exc.folded .exbody{display:none}
+.cardhead.foldable{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cardhead.foldable .titles{flex:1 1 auto}
+.chev{flex:0 0 auto;margin-left:auto;color:var(--muted);font-size:18px;line-height:30px;transition:transform .2s}
+.card.exc.folded .chev{transform:rotate(-90deg)}
+.foldsum{display:none;margin:4px 0 0;font-size:13px;font-weight:700;color:var(--accent)}
+.card.exc.folded .foldsum{display:block}
+.card.exc.folded{padding-top:10px;padding-bottom:10px}
+.foldbtn{width:100%}
+.prevhint{font:inherit;font-size:13px;color:var(--muted);background:var(--surface2);border:1px dashed var(--line);border-radius:10px;padding:8px 10px;margin:0;display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;width:100%}
+button.prevhint{cursor:pointer;min-height:40px}
+.prevhint b{color:var(--accent);font-size:13px;flex:0 0 auto}
+.tecwrap:empty{display:none}
+.tecx{border-left:3px solid var(--warn);padding-left:8px}
