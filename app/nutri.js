@@ -428,6 +428,7 @@ window.EYLNutri={intakeCheck:function(o){const id=o.client.id;return Promise.all
  cycleBanner:function(o){const box=document.createElement("div");box.className="cycbanner";box.hidden=true;const id=o.client&&o.client.id;if(!id)return box;
   if(CYCC[id]){cycBannerFill(box,CYCC[id].ciclo,o.go);return box}
   o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle().then(r=>{const k=r&&r.data&&r.data.data?r.data.data.ciclo:null;CYCC[id]={ciclo:k||null};cycBannerFill(box,k,o.go)},()=>{});return box},
+ cycleToday:function(o){const id=o.client&&o.client.id;if(!id)return Promise.resolve(null);const f=k=>{if(!k||!k.inicio)return null;const c={ciclo:k};const d=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,d);return{dia:d,fase:ph,label:lab,entreno:(CYC_ADV[ph]||CYC_ADV.gen)[1]}};if(CYCC[id])return Promise.resolve(f(CYCC[id].ciclo));return o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle().then(r=>{const k=r&&r.data&&r.data.data?r.data.data.ciclo:null;CYCC[id]={ciclo:k||null};return f(k)},()=>null)},
  view:function(o){const root=document.createElement("div");root.className="nu";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando nutrición…</p>';start(o,root);return root}};
 async function start(o,root){
  S={root,sb:o.sb,coach:!!o.coach,flash:o.flash||function(){},intake:o.onDone||null,intakeDone:false,tab:"resumen",ctab:"inicio",dayIdx:0,wk:weekStart(addD(TODAY,o.coach?1:0)),selDay:null,openEq:null,wiz:null,qedit:false,draft:{}};

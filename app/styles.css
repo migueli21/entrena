@@ -212,3 +212,17 @@ button.prevhint{cursor:pointer;min-height:40px}
 .prevhint b{color:var(--accent);font-size:13px;flex:0 0 auto}
 .tecwrap:empty{display:none}
 .tecx{border-left:3px solid var(--warn);padding-left:8px}
+/* 9 nov 2026: valoración del ejercicio y «Lo importante de hoy» */
+.verdict{margin:6px 0 0;font-size:13px;line-height:1.35;padding:6px 8px;border-radius:8px;background:var(--surface2);color:var(--fg)}
+.verdict.up{border-left:3px solid var(--accent)}
+.verdict.eq{border-left:3px solid #e6c84a}
+.verdict.down{border-left:3px solid var(--warn)}
+.card.brief h2{margin:0}
+.blist{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.blist li{font-size:14px;line-height:1.4;background:var(--surface2);border-radius:10px;padding:8px 10px}
+.blist li.bcyc{border-left:3px solid #f48fb1}
+.blist li.bmore{background:transparent;color:var(--muted);padding:2px 2px;font-size:13px}
+.brief-ov{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+.brief-sheet{width:100%;max-width:480px;max-height:85vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px 16px;display:grid;gap:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.brief-sheet h2{margin:0;font-family:var(--display);font-size:26px;text-transform:uppercase;letter-spacing:.01em}
+.bkick{margin:0;color:var(--accent);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}

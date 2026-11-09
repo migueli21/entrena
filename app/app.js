@@ -376,6 +376,7 @@
       else main.appendChild(dateRow());
       if (d.libre && !ST.editing) main.appendChild(extraHead());
       if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = "nutri"; render(); window.scrollTo(0, 0); } }));
+      if (!ST.editing && list.length && !d.libre && UI.d < 100) main.appendChild(briefCard(d));
       if (!ST.editing && list.length) main.appendChild(prepCard());
       if (!list.length && !ST.editing && !d.libre) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
       list.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
@@ -505,6 +506,108 @@
     return num(st.sets / div) + " de " + num(tot / div) + (ex.uni ? " series por lado" : " series") + (st.kg ? " · máx. " + kgTxt(st.kg) + " kg" : "");
   }
 
+  // ---------- Valoración del ejercicio y «Lo importante de hoy» ----------
+  function isDeload(d) { return (d.ej || []).some(function (e) { return /descarga/i.test(e.nota || ""); }); }
+  function cap(S) { // fuerza estimada de una serie (Epley con las reps en recámara)
+    var r = parseFloat(S.reps), kg = parseFloat(S.kg), rir = parseFloat(S.rir);
+    if (!(r > 0)) return 0; var t = r + (rir >= 0 ? Math.min(rir, 5) : 0);
+    return kg > 0 ? kg * (1 + t / 30) : t;
+  }
+  function verdict(ex) {
+    var E = exLog(ex), cur = 0, prev = 0, n = 0, dr = 0, dk = 0, sameKg = true, pending = 0;
+    ex.series.forEach(function (s, si) {
+      var S = E.s[si] || {}, P = prevSet(ex, si);
+      if (!(parseFloat(S.reps) > 0)) { pending++; return; }
+      if (!P) return;
+      n++; cur += cap(S); prev += cap(P);
+      dr += parseFloat(S.reps) - parseFloat(P.reps);
+      var a = parseFloat(S.kg) || 0, b = parseFloat(P.kg) || 0; dk += a - b; if (a !== b) sameKg = false;
+    });
+    if (!n || pending) return null;
+    var pct = prev ? (cur - prev) / prev : 0, plus = function (x, u) { return (x > 0 ? "+" : "") + kgTxt(x) + u; };
+    var det = sameKg ? (dr ? plus(dr, dr === 1 || dr === -1 ? " rep" : " reps") + " con el mismo peso" : "mismas reps y mismo peso")
+      : plus(dk / n, " kg de media por serie");
+    if (pct > 0.02) return { c: "up", t: "🟢 Mejoras: " + det + "." };
+    if (pct < -0.02) return isDeload(day()) ? { c: "eq", t: "🟡 Semana de descarga: toca ir más suave, es lo previsto." }
+      : { c: "down", t: "🟠 Baja un poco (" + det + "). Revisa descanso, sueño o fatiga; un día flojo es normal." };
+    return { c: "eq", t: "🟡 Te mantienes: mismo rendimiento que la última vez" + (sameKg ? "" : " (" + det + ")") + "." };
+  }
+  function repRange(r) { var m = String(r || "").match(/(\d+)\s*(?:-|–|a)\s*(\d+)/); if (m) return [+m[1], +m[2]]; m = String(r || "").match(/(\d+)/); return m ? [+m[1], +m[1]] : null; }
+  function stepKg(kg) { return kg >= 100 ? 5 : kg >= 20 ? 2.5 : 1; }
+  function suggestion(ex) {
+    var rows = [], min = Infinity, max = 0;
+    ex.series.forEach(function (s, si) { var P = prevSet(ex, si), rg = repRange(s.r); if (P && rg) { rows.push({ P: P, rg: rg }); } });
+    if (!rows.length) return null;
+    var kg = 0, allTop = true, anyLow = false;
+    rows.forEach(function (x) {
+      var r = parseFloat(x.P.reps), k = parseFloat(x.P.kg) || 0; if (k > kg) kg = k;
+      if (r < x.rg[1]) allTop = false; if (r < x.rg[0]) anyLow = true;
+      min = Math.min(min, x.rg[0]); max = Math.max(max, x.rg[1]);
+    });
+    if (allTop && kg) { var nk = kg + stepKg(kg); return { p: 1, t: "⬆️ " + ex.n + ": sube de " + kgTxt(kg) + " a " + kgTxt(nk) + " kg y vuelve a " + min + " reps." }; }
+    if (allTop) return { p: 1, t: "⬆️ " + ex.n + ": llegaste arriba del rango; añade dificultad (más peso o más lento)." };
+    if (anyLow) return { p: 3, t: "➡️ " + ex.n + ": mantén " + (kg ? kgTxt(kg) + " kg" : "el peso") + " y busca llegar a " + min + " reps en todas las series." };
+    return { p: 2, t: "➕ " + ex.n + ": mismo peso" + (kg ? " (" + kgTxt(kg) + " kg)" : "") + ", intenta 1 rep más por serie (hasta " + max + ")." };
+  }
+  function briefItems(d) {
+    var out = [], rir = null;
+    (d.ej || []).forEach(function (ex) { var m = (ex.nota || "").match(/RIR\s*[0-9]+(?:\s*-\s*[0-9]+)?/i); if (!rir && m) rir = m[0].toUpperCase(); });
+    if (isDeload(d)) out.push({ k: "plan", t: "🔋 Semana de descarga: menos series y más reps en recámara. No busques récords." });
+    else if (rir) out.push({ k: "plan", t: "🎯 Objetivo de esfuerzo esta semana: " + rir + " (reps que te deberían sobrar al acabar cada serie)." });
+    var sug = (d.ej || []).map(suggestion).filter(Boolean).sort(function (a, b) { return a.p - b.p; });
+    sug.forEach(function (s) { out.push({ k: "ex", t: s.t }); });
+    return out;
+  }
+  function briefList(d, cyc, limit) {
+    var items = briefItems(d), lis = [];
+    if (cyc) lis.push(el("li", { class: "bcyc" }, [el("b", { text: "🌙 Día " + cyc.dia + " del ciclo · " + cyc.label + ". " }), cyc.entreno]));
+    var exs = items.filter(function (x) { return x.k === "ex"; }), plan = items.filter(function (x) { return x.k !== "ex"; });
+    plan.forEach(function (x) { lis.push(el("li", { text: x.t })); });
+    var shown = limit ? exs.slice(0, limit) : exs;
+    shown.forEach(function (x) { lis.push(el("li", { text: x.t })); });
+    if (limit && exs.length > limit) lis.push(el("li", { class: "bmore", text: "Y " + (exs.length - limit) + " ejercicio" + (exs.length - limit > 1 ? "s" : "") + " más: lo verás en cada serie." }));
+    if (!exs.length && !cyc && !plan.length) return null;
+    if (!exs.length) lis.push(el("li", { class: "bmore", text: "Es la primera vez que haces este día: apunta bien reps y kilos y la próxima semana te diré cuándo subir." }));
+    return el("ul", { class: "blist" }, lis);
+  }
+  function cycFetch(cb) {
+    if (!window.EYLNutri || !window.EYLNutri.cycleToday || !api.sb) return cb(null);
+    window.EYLNutri.cycleToday({ sb: api.sb, client: ST.client }).then(cb, function () { cb(null); });
+  }
+  function briefCard(d) {
+    var box = el("section", { class: "card brief" }, [
+      el("h2", { text: "📋 Lo importante de hoy" })]);
+    var body = el("div"); box.appendChild(body);
+    cycFetch(function (cyc) {
+      var l = briefList(d, null, 0);
+      if (!l) { box.hidden = true; return; }
+      body.appendChild(l);
+      maybePopup(d, cyc);
+    });
+    return box;
+  }
+  function briefKey() { var t = new Date(); return "eyl-brief-" + ST.clientId + "-" + logKey() + "-" + t.getFullYear() + "-" + (t.getMonth() + 1) + "-" + t.getDate(); }
+  function maybePopup(d, cyc) {
+    if (ST.readOnly || ST.coachWrite || UI.view !== "entreno" || UI.d >= 100) return;
+    var L = ST.LOG[logKey()];
+    var started = L && (L.terminado || Object.keys(L.ej || {}).some(function (k) { return (L.ej[k].s || []).some(function (S) { return S && parseFloat(S.reps) > 0; }); }));
+    if (started || lsGet(briefKey(), false) || document.querySelector(".brief-ov")) return;
+    var l = briefList(d, cyc, 5); if (!l) return;
+    lsSet(briefKey(), true);
+    var ov;
+    function close() { if (ov && ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener("keydown", esc); }
+    function esc(e) { if (e.key === "Escape") close(); }
+    ov = el("div", { class: "brief-ov", onclick: function (e) { if (e.target === ov) close(); } }, [
+      el("div", { class: "brief-sheet", role: "dialog", "aria-modal": "true", "aria-label": "Lo importante de hoy" }, [
+        el("p", { class: "bkick", text: (d.nombre || "Tu entreno") + " · antes de empezar" }),
+        el("h2", { text: "Lo importante de hoy" }),
+        l,
+        el("button", { class: "btn primary wide", type: "button", text: "Empezar", onclick: close })
+      ])]);
+    document.body.appendChild(ov); document.addEventListener("keydown", esc);
+    var b = ov.querySelector(".btn"); if (b) b.focus();
+  }
+
   function card(ex, i) {
     var E = exLog(ex);
     var folded = isFolded(ex);
@@ -512,7 +615,7 @@
     function toggle() {
       var v = !c.classList.contains("folded");
       setFolded(ex, v); c.classList.toggle("folded", v);
-      sum.textContent = foldSummary(ex);
+      sum.textContent = foldSummary(ex); refreshV();
       head.setAttribute("aria-expanded", String(!v));
       if (v) {
         var nav = document.querySelector(".nav"), off = (nav ? Math.max(0, nav.getBoundingClientRect().bottom) : 0) + 8;
@@ -520,13 +623,15 @@
       }
     }
     var sum = el("p", { class: "foldsum", text: foldSummary(ex) });
+    var vd = el("p", { class: "verdict", hidden: true });
+    function refreshV() { var v = verdict(ex); vd.className = "verdict" + (v ? " " + v.c : ""); vd.textContent = v ? v.t : ""; vd.hidden = !v; }
     var head = el("div", { class: "cardhead foldable", role: "button", tabindex: "0", "aria-expanded": String(!folded), onclick: toggle,
       onkeydown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } } }, [
       el("span", { class: "idx", text: String(i + 1) }),
       el("div", { class: "titles" }, [
         el("h2", { text: ex.n }),
         el("p", { class: "meta", text: (ex.extra ? "No pautado · " : "") + seriesText(ex) + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") }),
-        sum
+        sum, vd
       ]),
       el("span", { class: "chev", "aria-hidden": "true", text: "▾" })
     ]);
@@ -538,7 +643,7 @@
     ex.series.forEach(function (s, si) {
       var S = setLog(ex, si);
       var row = el("div", { class: "set" + (S.reps ? " filled" : "") });
-      function save() { row.classList.toggle("filled", !!S.reps); persist(); }
+      function save() { row.classList.toggle("filled", !!S.reps); persist(); sum.textContent = foldSummary(ex); refreshV(); }
       function upd(k) { return function (v) { S[k] = v; save(); }; }
       row.appendChild(el("div", { class: "sethead" }, [
         el("span", { class: "sn", text: setLabel(ex, si) }),
@@ -575,6 +680,7 @@
       row.appendChild(tecWrap);
       body.appendChild(row);
     });
+    refreshV();
     var ta = el("textarea", { rows: "2", placeholder: ST.readOnly ? "" : "¿Cómo te ha ido este ejercicio? Molestias, sensaciones…", oninput: function () { E.com = ta.value; persist(); } });
     ta.value = E.com || ""; if (ST.readOnly) ta.disabled = true;
     body.appendChild(field("Comentario del ejercicio", ta, "block"));
