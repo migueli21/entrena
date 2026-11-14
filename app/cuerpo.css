@@ -1,0 +1,38 @@
+/* Mapa muscular (Volumen) */
+.bodytabs{display:flex;gap:6px}
+.bodytabs .chip{padding:6px 14px;font-weight:700}
+.bodywrap{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+.bodyfig{width:100%;height:auto;max-height:420px;display:block;touch-action:manipulation}
+.bz{stroke:var(--bg);stroke-width:1.2;stroke-linejoin:round}
+.bz.base{fill:#2a2f2b}
+.bz.line{fill:none;stroke:color-mix(in srgb,var(--bg) 70%,transparent);stroke-width:1}
+.bz.m{cursor:pointer;transition:fill .15s}
+.bz.l0{fill:#353b36}
+.bz.l1{fill:#1f5a35}
+.bz.l2{fill:#1c8a46}
+.bz.l3{fill:#00b84c}
+.bz.l4{fill:#6dff9e}
+.bz.sel{stroke:var(--cream);stroke-width:2.2}
+.bodycap{fill:var(--muted);font:600 11px var(--body);letter-spacing:.12em;text-transform:uppercase}
+.bodyleg{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;font-size:12px;color:var(--muted)}
+.bodyleg span{display:inline-flex;align-items:center;gap:5px;font-family:var(--num)}
+.bodyleg .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.l0{background:#353b36}.sw.l1{background:#1f5a35}.sw.l2{background:#1c8a46}.sw.l3{background:#00b84c}.sw.l4{background:#6dff9e}
+.bodyinfo{background:var(--surface2);border-radius:12px;padding:10px 12px;display:grid;gap:4px;min-height:48px;font-size:14px}
+.bodyinfo b{font-family:var(--display);font-size:18px;text-transform:uppercase;line-height:1.1}
+.bodyinfo .bodyv{color:var(--accent);font-weight:700}
+.bodyinfo ul{margin:2px 0 0;padding-left:18px;color:var(--fg);font-size:13px}
+.bodyrank h3{margin:4px 0 6px;font-family:var(--display);font-size:18px;text-transform:uppercase}
+.bodyrank .rank{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.bodyrank .rank li{cursor:pointer}
+.bodyrank .rt{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.bodyrank .rt b{font-family:var(--num);color:var(--accent)}
+.bodyrank .rb{height:6px;border-radius:3px;background:var(--surface2);overflow:hidden;margin-top:3px}
+.bodyrank .rb i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.bodyrank .lowz{margin-top:10px}
+.bodyinfo .bodyev{font-size:12px;color:var(--warn)}
+.bodyinfo .bodyev.ok{color:var(--muted)}
+.bodysrc{font-size:13px;color:var(--muted)}
+.bodysrc summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
+.bodysrc ul{margin:4px 0 0;padding-left:18px;display:grid;gap:4px}
+.bodysrc a{color:var(--accent)}

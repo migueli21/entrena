@@ -226,3 +226,15 @@ button.prevhint{cursor:pointer;min-height:40px}
 .brief-sheet{width:100%;max-width:480px;max-height:85vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px 16px;display:grid;gap:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .brief-sheet h2{margin:0;font-family:var(--display);font-size:26px;text-transform:uppercase;letter-spacing:.01em}
 .bkick{margin:0;color:var(--accent);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+/* panel: avisos de dolor y etapa en la lista de clientes */
+.painsum{margin:0;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--danger) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--danger) 40%,transparent);font-size:14px}
+.client.haspain.bad{border-color:color-mix(in srgb,var(--danger) 55%,var(--line))}
+.client.haspain.warn{border-color:color-mix(in srgb,var(--warn) 50%,var(--line))}
+.client>div:first-child{min-width:0}
+.client .pills{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.painlist{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px;font-size:13px;line-height:1.3}
+.painlist li{padding-left:16px;position:relative;color:var(--fg);overflow-wrap:anywhere}
+.painlist li::before{content:"";position:absolute;left:2px;top:.45em;width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.painlist li.bad::before{background:var(--danger)}
+.painlist li.more{color:var(--muted)}.painlist li.more::before{display:none}
+.stagetag{display:block;width:fit-content;margin-top:6px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#c792ea 22%,var(--surface2));color:#e7d3f7}

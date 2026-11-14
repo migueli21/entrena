@@ -29,7 +29,11 @@
       listPlans: function () { return sb.from("planes").select("cliente_id,data").then(ok); },
       savePlan: function (cid, data) { return sb.from("planes").upsert({ cliente_id: cid, data: data }).then(ok); },
       getLogs: function (cid) { return sb.from("registros").select("semana,dia,data").eq("cliente_id", cid).then(ok); },
-      saveLog: function (cid, w, d, data) { return sb.from("registros").upsert({ cliente_id: cid, semana: w, dia: d, data: data }).then(ok); }
+      saveLog: function (cid, w, d, data) { return sb.from("registros").upsert({ cliente_id: cid, semana: w, dia: d, data: data }).then(ok); },
+      // panel: avisos de dolor y etapa (si falla, la lista sale igual sin avisos)
+      listChecks: function () { return sb.from("seguimiento").select("cliente_id,ck:data->checkins").then(ok); },
+      listIntakes: function () { return sb.from("nutri_cliente").select("cliente_id,e:data->entrevistaCli->data,etapa:data->etapa").then(ok); },
+      recentLogs: function () { return sb.from("registros").select("cliente_id,data,updated_at").gte("updated_at", new Date(Date.now() - 14 * 864e5).toISOString()).then(ok); }
     };
   }
 
@@ -191,15 +195,55 @@
   // ================= COACH HOME =================
   function coachHome() {
     loading("Cargando clientes…");
-    Promise.all([api.listClients(), api.lastActivity(), api.listPlans()]).then(function (r) {
+    function soft(f) { return f ? f().catch(function () { return []; }) : Promise.resolve([]); }
+    Promise.all([api.listClients(), api.lastActivity(), api.listPlans(), soft(api.listChecks), soft(api.listIntakes), soft(api.recentLogs)]).then(function (r) {
       ST.clients = r[0]; ST.activity = {};
       r[1].forEach(function (a) { if (!ST.activity[a.cliente_id]) ST.activity[a.cliente_id] = a.updated_at; });
       ST.plans = {}; r[2].forEach(function (p) { ST.plans[p.cliente_id] = p.data; });
+      ST.pain = painInfo(r[3] || [], r[4] || [], r[5] || []);
+      ST.stage = {}; (r[4] || []).forEach(function (x) { var t = window.EYLEtapa && window.EYLEtapa.label(x.etapa, x.e); if (t) ST.stage[x.cliente_id] = t; });
       renderCoachHome();
     }).catch(function (x) { shell([topbar(), el("p", { class: "err", text: errMsg(x) })]); });
   }
+  // ---- avisos de dolor para la lista de clientes ----
+  var ZONA_N = { lumbar: "zona lumbar", rodilla: "rodilla", hombro: "hombro", cervical: "cuello", tobillo: "tobillo", codo: "codo", cadera: "cadera", aquiles: "tendón de Aquiles", otra: "otra zona" };
+  var PAIN_RE = /\b(dolor\w*|duel[ea]n?|doli[oó]|molest\w*|pinch\w*|lesi[oó]n\w*|tir[oó]n|contractur\w*)\b/i;
+  function isoMonday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); }
+  function painInfo(checks, intakes, logs) {
+    var out = {}, now = new Date(), ws = isoMonday(now), wsPrev = isoMonday(new Date(now.getTime() - 7 * 864e5));
+    function add(id, lvl, txt) { var o = out[id] || (out[id] = { lvl: "warn", items: [] }); if (lvl === "bad") o.lvl = "bad"; o.items.push({ lvl: lvl, txt: txt }); }
+    checks.forEach(function (r) {
+      var ck = r.ck || {}, cur = ck[ws], prev = ck[wsPrev];
+      [[cur, "esta semana"], [prev, "la semana pasada"]].forEach(function (p, i) {
+        var c = p[0]; if (!c || c.dolor == null || +c.dolor < 3) return;
+        if (i === 1 && cur && cur.dolor != null) return; // ya cuenta el de esta semana
+        add(r.cliente_id, +c.dolor >= 6 ? "bad" : "warn", "Dolor " + c.dolor + "/10 en " + (ZONA_N[c.zona] || "una zona") + " " + p[1]);
+      });
+      if (cur && prev && cur.zona && cur.zona === prev.zona && +cur.dolor >= 3 && +prev.dolor >= 3) add(r.cliente_id, "warn", "Misma zona dos semanas seguidas");
+    });
+    intakes.forEach(function (r) {
+      var e = r.e || {}; if (e.lesion !== "si") return;
+      var lv = parseFloat(e.lesionDolor);
+      add(r.cliente_id, lv >= 6 ? "bad" : "warn", "Lesión al empezar: " + ((e.lesionZona || []).join(", ") || "sin zona") + (isFinite(lv) ? " · " + lv + "/10" : ""));
+    });
+    logs.forEach(function (r) {
+      var L = r.data || {}, hits = [];
+      if (L.borrado) return;
+      Object.keys(L.ej || {}).forEach(function (k) { var E = L.ej[k] || {}; if (E.com) hits.push(E.com); (E.s || []).forEach(function (st) { if (st && st.com) hits.push(st.com); }); });
+      (L.extra || []).forEach(function (E) { if (E && E.com) hits.push(E.com); });
+      if (L.sesion && L.sesion.com) hits.push(L.sesion.com);
+      hits.filter(function (t) { return PAIN_RE.test(t); }).forEach(function (t) {
+        var m = t.length > 70 ? t.slice(0, 68) + "…" : t;
+        add(r.cliente_id, "warn", "Comentario" + (L.fecha ? " del " + fmt(parseDate(L.fecha)) : "") + ": «" + m + "»");
+      });
+    });
+    Object.keys(out).forEach(function (id) { var o = out[id]; o.items.sort(function (a, b) { return (a.lvl === "bad" ? 0 : 1) - (b.lvl === "bad" ? 0 : 1); }); });
+    return out;
+  }
   function renderCoachHome() {
     var list = el("div", { class: "clients" });
+    var painN = ST.clients.filter(function (c) { return ST.pain && ST.pain[c.id]; }).length;
+    if (painN) list.appendChild(el("p", { class: "painsum", role: "status", text: "⚠️ " + painN + (painN === 1 ? " cliente con aviso de dolor" : " clientes con aviso de dolor") + " (check-in, entrevista o comentarios de los últimos 14 días)." }));
     if (!ST.clients.length) list.appendChild(el("p", { class: "empty", text: "Aún no tienes clientes. Créalos en Supabase → Authentication → Users → Add user." }));
     ST.clients.forEach(function (c) {
       var last = ST.activity[c.id], plan = ST.plans[c.id];
@@ -208,9 +252,14 @@
         : c.must_change_password ? el("span", { class: "pill", text: "No ha entrado" })
         : days == null ? el("span", { class: "pill", text: "Sin registros" })
         : el("span", { class: "pill" + (days <= 3 ? " go" : days > 7 ? " warn" : ""), text: days === 0 ? "Hoy" : "Hace " + days + " d" });
-      list.appendChild(el("button", { class: "client", type: "button", onclick: function () { openClient(c, true); } }, [
-        el("div", null, [el("b", { text: c.nombre || c.email }), el("small", { text: c.email + (c.activo ? "" : " · pausado") })]),
-        pill
+      var pain = ST.pain && ST.pain[c.id], stage = ST.stage && ST.stage[c.id];
+      var info = [el("b", { text: c.nombre || c.email }), el("small", { text: c.email + (c.activo ? "" : " · pausado") })];
+      if (stage) info.push(el("span", { class: "stagetag", text: stage }));
+      if (pain) info.push(el("ul", { class: "painlist" }, pain.items.slice(0, 3).map(function (it) { return el("li", { class: it.lvl, text: it.txt }); })
+        .concat(pain.items.length > 3 ? [el("li", { class: "more", text: "+" + (pain.items.length - 3) + " más" })] : [])));
+      list.appendChild(el("button", { class: "client" + (pain ? " haspain " + pain.lvl : ""), type: "button", onclick: function () { openClient(c, true); } }, [
+        el("div", null, info),
+        el("div", { class: "pills" }, (pain ? [el("span", { class: "pill " + (pain.lvl === "bad" ? "bad" : "warn"), text: pain.lvl === "bad" ? "Dolor" : "Molestias" })] : []).concat([pill]))
       ]));
     });
     shell([topbar(), el("header", { class: "top" }, [
@@ -376,6 +425,7 @@
       else main.appendChild(dateRow());
       if (d.libre && !ST.editing) main.appendChild(extraHead());
       if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = "nutri"; render(); window.scrollTo(0, 0); } }));
+      if (!ST.editing && window.EYLEtapa && api.sb) main.appendChild(window.EYLEtapa.banner({ sb: api.sb, client: ST.client, coach: ST.mode === "entrenador", flash: flash }));
       if (!ST.editing && list.length && !d.libre && UI.d < 100) main.appendChild(briefCard(d));
       if (!ST.editing && list.length) main.appendChild(prepCard());
       if (!list.length && !ST.editing && !d.libre) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
@@ -846,9 +896,10 @@
   function refreshProgress() { var old = document.getElementById("progress"); if (old && UI.view === "entreno" && !ST.editing) old.replaceWith(progressBlock()); }
   function groupsOf(ex) { return ex.g && ex.g.length ? ex.g : ["Sin grupo"]; }
   function volumeView() {
-    var w = UI.w, dias = week().dias, used = {}, plan = {}, done = {};
+    var w = UI.w, dias = week().dias, used = {}, plan = {}, done = {}, bodyPlan = [], bodyDone = [];
     dias.forEach(function (d, di) { d.ej.forEach(function (ex) {
       var div = ex.uni ? 2 : 1, st = exStats(w, di, ex);
+      bodyPlan.push({ n: ex.n, g: ex.g, sets: ex.series.length / div }); bodyDone.push({ n: ex.n, g: ex.g, sets: st.sets / div });
       groupsOf(ex).forEach(function (g) {
         used[g] = true; plan[g] = plan[g] || []; done[g] = done[g] || [];
         plan[g][di] = (plan[g][di] || 0) + ex.series.length / div;
@@ -860,6 +911,7 @@
       var p = k.split("-"), L = ST.LOG[k]; if (+p[0] !== w || L.borrado) return;
       (L.extra || []).forEach(function (ex) {
         var div = ex.uni ? 2 : 1, st = exStats(w, +p[1], ex); if (!st.sets) return; hasX = true;
+        bodyDone.push({ n: ex.n, g: ex.g, sets: st.sets / div });
         groupsOf(ex).forEach(function (g) { used[g] = true; plan[g] = plan[g] || []; done[g] = done[g] || []; done[g][xi] = (done[g][xi] || 0) + st.sets / div; });
       });
     });
@@ -897,6 +949,7 @@
       return el("tr", null, tds);
     });
     return el("main", { class: "day" }, [
+      window.EYLCuerpo ? window.EYLCuerpo.card({ done: bodyDone, plan: bodyPlan, title: "Mapa muscular · Semana " + (w + 1) }) : null,
       el("section", { class: "card" }, [el("h2", { text: "Volumen · Semana " + (w + 1) }),
         el("p", { class: "meta", text: "Series por grupo muscular: hechas / pautadas. En unilaterales cuenta 1 serie por cada pareja izquierda-derecha." }),
         el("div", { class: "tablewrap" }, [el("table", { class: "vtable" }, [el("thead", null, [el("tr", null, head)]), el("tbody", null, body)])])]),
