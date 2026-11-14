@@ -207,7 +207,11 @@
   }
   // ---- avisos de dolor para la lista de clientes ----
   var ZONA_N = { lumbar: "zona lumbar", rodilla: "rodilla", hombro: "hombro", cervical: "cuello", tobillo: "tobillo", codo: "codo", cadera: "cadera", aquiles: "tendón de Aquiles", otra: "otra zona" };
-  var PAIN_RE = /\b(dolor\w*|duel[ea]n?|doli[oó]|molest\w*|pinch\w*|lesi[oó]n\w*|tir[oó]n|contractur\w*)\b/i;
+  // «pinchar» no cuenta: en el gimnasio es no completar la repetición. Se quitan las negaciones («0 molestias», «sin dolor», «no me duele»).
+  var PAIN_W = "(?:dolor\\w*|duel[ea]n?|doli[oó]|molest\\w*|lesi[oó]n\\w*|tir[oó]n|contractur\\w*)";
+  var PAIN_RE = new RegExp("(?:^|[^\\wáéíóúñ])" + PAIN_W + "(?![\\wáéíóúñ])", "i");
+  var PAIN_NEG = new RegExp("(?:^|[^\\wáéíóúñ])(?:0|cero|sin|ning[uú]n[ao]?|nada de|ni una?|no)\\s+(?:(?:me|le|te|ha|he|hay|tengo|tiene|noto|nota|siento|siente|ninguna?|ning[uú]n|mucha?|nada|de|la|el)\\s+){0,3}" + PAIN_W, "gi");
+  function painText(t) { return PAIN_RE.test(String(t || "").replace(PAIN_NEG, " ")); }
   function isoMonday(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); }
   function painInfo(checks, intakes, logs) {
     var out = {}, now = new Date(), ws = isoMonday(now), wsPrev = isoMonday(new Date(now.getTime() - 7 * 864e5));
@@ -232,9 +236,10 @@
       Object.keys(L.ej || {}).forEach(function (k) { var E = L.ej[k] || {}; if (E.com) hits.push(E.com); (E.s || []).forEach(function (st) { if (st && st.com) hits.push(st.com); }); });
       (L.extra || []).forEach(function (E) { if (E && E.com) hits.push(E.com); });
       if (L.sesion && L.sesion.com) hits.push(L.sesion.com);
-      hits.filter(function (t) { return PAIN_RE.test(t); }).forEach(function (t) {
-        var m = t.length > 70 ? t.slice(0, 68) + "…" : t;
-        add(r.cliente_id, "warn", "Comentario" + (L.fecha ? " del " + fmt(parseDate(L.fecha)) : "") + ": «" + m + "»");
+      var fd = L.fecha ? parseDate(L.fecha) : r.updated_at ? new Date(r.updated_at) : null;
+      hits.filter(painText).forEach(function (t) {
+        var m = t.trim(); m = m.length > 70 ? m.slice(0, 68) + "…" : m;
+        add(r.cliente_id, "warn", "Comentario" + (fd ? " del " + fmt(fd) : "") + ": «" + m + "»");
       });
     });
     Object.keys(out).forEach(function (id) { var o = out[id]; o.items.sort(function (a, b) { return (a.lvl === "bad" ? 0 : 1) - (b.lvl === "bad" ? 0 : 1); }); });
