@@ -277,15 +277,16 @@ function equivs(c,id,g){
  return ids.filter(o=>o!==id&&(c.lacteos||!LACTEOS.includes(o))).map(o=>{const step=FOODS[o][1]>500?1:5;return[o,Math.max(step,Math.round(amt/FOODS[o][ki]*100/step)*step)]}).slice(0,6);
 }
 /* ---------- hábitos ---------- */
-function habitos(c){
- const t=c.trabajo||{},H=[];const sent=+t.horasSentado||0;
- if(sent>=5||["oficina","teletrabajo","mixto"].includes(t.modalidad))H.push(["⏱","Pausas activas cada 30 minutos",`Pasa ~${sent||"muchas"} h sentado. Levantarse y caminar 3–5 min cada 30 min reduce la glucosa y la insulina tras las comidas frente a estar sentado seguido (${cite("henson")}); caminar funciona mejor que solo ponerse de pie (${cite("buffey")}). Una alarma en el móvil o el reloj ayuda.`]);
- if(c.pasos<8000)H.push(["🚶","Paseo después de comer y cenar",`Hoy ronda los ${c.pasos.toLocaleString("es-ES")} pasos. 10–15 min caminando tras las comidas principales, y subir 1.000–2.000 pasos cada 2 semanas hasta 8.000–10.000.`]);
- if(t.desplazamiento==="coche"||t.desplazamiento==="transporte")H.push(["🅿","Suma pasos en los trayectos",t.desplazamiento==="coche"?"Aparcar 5–10 min más lejos del trabajo o del súper.":"Bajarse una parada antes y terminar andando."]);
- if(t.modalidad==="teletrabajo"||t.modalidad==="mixto")H.push(["📞","Llamadas de pie o caminando","En casa no hay paseos al café ni a la sala de reuniones: aprovecha llamadas para moverte. Si es posible, alterna con una mesa elevable."]);
- if(t.pausas==="no")H.push(["🪑","Sin pausas en el trabajo","Si no puede levantarse, compensar fuera: paseo al llegar a casa y algún bloque de 10 min de movilidad."]);
- if(t.modalidad==="pie"||t.modalidad==="fisico")H.push(["🔋","Su trabajo ya suma actividad","Priorizar la recuperación: hidratos alrededor del turno, buena hidratación y descanso. No hace falta añadir más pasos."]);
- if(c.sueno<7)H.push(["🌙","Dormir 7 h o más",`Duerme ${c.sueno} h. Horario fijo para acostarse y levantarse, y cenar al menos 2 h antes. La falta de sueño frena la síntesis de proteína muscular (${cite("lamon")}).`]);
+function habitos(c,cli){
+ /* cli: texto para el cliente (tú); sin cli: para el entrenador (él/ella) */
+ const t=c.trabajo||{},H=[];const sent=+t.horasSentado||0;const dec=v=>String(v).replace(".",",");const miles=v=>String(Math.round(+v||0)).replace(/\B(?=(\d{3})+(?!\d))/g,".");const sent_=c.sexo==="m"||((c.entrevistaCli||{}).data||{}).sexo==="m"?"sentada":"sentado";
+ if(sent>=5||["oficina","teletrabajo","mixto"].includes(t.modalidad))H.push(["⏱","Pausas activas cada 30 minutos",(cli?`Pasas ~${sent?dec(sent):"muchas"} h ${sent_}. `:`Pasa ~${sent?dec(sent):"muchas"} h ${sent_}. `)+`Levantarse y caminar 3–5 min cada 30 min reduce la glucosa y la insulina tras las comidas frente a estar sentado seguido (${cite("henson")}); caminar funciona mejor que solo ponerse de pie (${cite("buffey")}). Una alarma en el móvil o el reloj ayuda.`]);
+ if(c.pasos<8000)H.push(["🚶","Paseo después de comer y cenar",`${cli?"Ahora rondas":"Hoy ronda"} los ${miles(c.pasos)} pasos. ${cli?"Camina 10–15 min después de las comidas principales y ve subiendo":"10–15 min caminando tras las comidas principales, y subir"} 1.000–2.000 pasos cada 2 semanas hasta 8.000–10.000.`]);
+ if(t.desplazamiento==="coche"||t.desplazamiento==="transporte")H.push(["🅿","Suma pasos en los trayectos",t.desplazamiento==="coche"?(cli?"Aparca 5–10 min más lejos del trabajo o del súper.":"Aparcar 5–10 min más lejos del trabajo o del súper."):(cli?"Bájate una parada antes y termina andando.":"Bajarse una parada antes y terminar andando.")]);
+ if(t.modalidad==="teletrabajo"||t.modalidad==="mixto")H.push(["📞","Llamadas de pie o caminando",cli?"En casa no hay paseos al café ni a la sala de reuniones: aprovecha las llamadas para moverte. Si puedes, alterna con una mesa elevable.":"En casa no hay paseos al café ni a la sala de reuniones: aprovecha llamadas para moverte. Si es posible, alterna con una mesa elevable."]);
+ if(t.pausas==="no")H.push(["🪑","Sin pausas en el trabajo",cli?"Si no puedes levantarte, compensa fuera: un paseo al llegar a casa y algún bloque de 10 min de movilidad.":"Si no puede levantarse, compensar fuera: paseo al llegar a casa y algún bloque de 10 min de movilidad."]);
+ if(t.modalidad==="pie"||t.modalidad==="fisico")H.push(["🔋",cli?"Tu trabajo ya suma actividad":"Su trabajo ya suma actividad",cli?"Prioriza la recuperación: hidratos alrededor del turno, buena hidratación y descanso. No hace falta que añadas más pasos.":"Priorizar la recuperación: hidratos alrededor del turno, buena hidratación y descanso. No hace falta añadir más pasos."]);
+ if(c.sueno<7)H.push(["🌙","Dormir 7 h o más",`${cli?"Duermes":"Duerme"} ${dec(c.sueno)} h. ${cli?"Intenta un horario fijo para acostarte y levantarte, y cena al menos 2 h antes.":"Horario fijo para acostarse y levantarse, y cenar al menos 2 h antes."} La falta de sueño frena la síntesis de proteína muscular (${cite("lamon")}).`]);
  return H;
 }
 function alerts(c){
@@ -316,7 +317,7 @@ function alerts(c){
  const pr=weekAvg(c,"prop");const fkg=pr.F/c.peso;
  if(pr.k&&fkg<0.5)A.push([c.sexo==="h"?"bad":"warn",`Grasa baja en el plan: ${r2(fkg)} g/kg`,"Por debajo de 0,5 g/kg.","plan"]);
  if(!c.trabajo||!c.trabajo.modalidad)A.push(["info","Falta trabajo y actividad diaria","Complétalo en Entrevista para generar recomendaciones de hábitos (pausas, paseos…).","entrevista"]);
- if(c.sueno<7)A.push(["warn",`Duerme ${c.sueno} h`,"Menos de 7 h empeora la recuperación y la síntesis de proteína muscular.","resumen"]);
+ if(c.sueno<7)A.push(["warn",`Duerme ${String(c.sueno).replace(".",",")} h`,"Menos de 7 h empeora la recuperación y la síntesis de proteína muscular.","resumen"]);
  if(c.ciclo){const cd=cycleDay(c,TODAY),[ph2]=cyclePhase(c,cd);
   if(!c.ciclo.anticonceptivo&&diffD(c.ciclo.inicio,TODAY)>(c.ciclo.regular===false?45:c.ciclo.len+5))A.push(["bad","Retraso de la regla",`Han pasado ${diffD(c.ciclo.inicio,TODAY)} días desde la última regla apuntada. Confirma que la tiene al día; si es real, revisa déficit y estrés y, si se repite, derivar al ginecólogo.`,"seg"]);
   if(ph2==="pm")A.push(["info","Semana premenstrual","Puede retener líquidos: no tomar decisiones por la báscula estos días.","seg"]);
@@ -807,7 +808,7 @@ function cInicio(c){
  if(c.entrevistaFecha&&ec.nota&&diffD(ec.validada||TODAY,TODAY)<=14)T.unshift(["","Tu entrevista está validada","De tu entrenador: "+ec.nota,null,null]);
  const lp=c.perim[c.perim.length-1];if(c.entrevistaFecha&&(!lp||diffD(lp.fecha,TODAY)>=30))T.push(["","Toca medirse este mes","Perímetros (brazos y muslos derecho e izquierdo) y 3 fotos."+(c.ciclo?" Mejor entre los días 5 y 10 de tu ciclo.":""),"medidas","Ir"]);
  const ws=weekStart(TODAY);const ci=c.checkins[ws];
- const hoyP=c.pesos.some(p=>p[0]===TODAY);const H=habitos(c);
+ const hoyP=c.pesos.some(p=>p[0]===TODAY);const H=habitos(c,true);
  let dia="";if(hasPlan(c)){const{d}=dayCtx(c,TODAY);dia=`<div class="npanel"><h2>Tu día</h2><div class="nkpis"><div><span class="nk">Calorías</span><span class="nv">${r0(d.m.k)}</span><span class="ns">${d.train?"día de entreno":"día de descanso"}</span></div><div><span class="nk">Proteína</span><span class="nv">${r0(d.m.P)} g</span><span class="ns">en ${d.meals.length} comidas</span></div></div>
   ${d.act.map(a=>`<div class="ntask hot"><div><b>Hoy toca: ${esc(a.txt)}</b><span>${esc(a.det)}</span></div><span></span></div>`).join("")}<button class="btn ghost wide" data-ctab="hoy">Ver mis comidas de hoy</button></div>`}
  return `<div class="npanel"><h2>Para hoy</h2>${T.map(([cl,t,s,go,b])=>`<div class="ntask ${cl}"><div><b>${t}</b><span>${s}</span></div>${go?(go==="_wiz"?`<button class="btn primary small" data-act="wizstart">${b}</button>`:`<button class="btn primary small" data-ctab="${go}">${b}</button>`):"<span></span>"}</div>`).join("")}

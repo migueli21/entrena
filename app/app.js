@@ -588,18 +588,27 @@
     return { c: "eq", t: "🟡 Te mantienes: mismo rendimiento que la última vez" + (sameKg ? "" : " (" + det + ")") + "." };
   }
   function repRange(r) { var m = String(r || "").match(/(\d+)\s*(?:-|–|a)\s*(\d+)/); if (m) return [+m[1], +m[2]]; m = String(r || "").match(/(\d+)/); return m ? [+m[1], +m[1]] : null; }
-  function stepKg(kg) { return kg >= 100 ? 5 : kg >= 20 ? 2.5 : 1; }
+  // Subida de peso que exista en el material: si el ejercicio usa pesos de 1,25 en 1,25 (poleas y máquinas: 7,5 · 23,75 · 31,25),
+  // la subida se redondea a ese paso; con mancuernas de 10 kg o más, de 2 en 2.
+  function stepKg(kg, ex, kgs) {
+    var base = kg >= 100 ? 5 : kg >= 20 ? 2.5 : 1;
+    var all = (kgs || []).concat([kg]).filter(function (k) { return k > 0; });
+    var grid125 = all.some(function (k) { return Math.abs(k - Math.round(k)) > 1e-6; });
+    if (grid125) return Math.ceil(base / 1.25 - 1e-9) * 1.25;
+    if (/mancuerna/i.test((ex && ex.n) || "") && kg >= 10 && kg < 20 && all.every(function (k) { return k % 2 === 0; })) return 2;
+    return base;
+  }
   function suggestion(ex) {
     var rows = [], min = Infinity, max = 0;
     ex.series.forEach(function (s, si) { var P = prevSet(ex, si), rg = repRange(s.r); if (P && rg) { rows.push({ P: P, rg: rg }); } });
     if (!rows.length) return null;
-    var kg = 0, allTop = true, anyLow = false;
+    var kg = 0, allTop = true, anyLow = false, kgs = [];
     rows.forEach(function (x) {
-      var r = parseFloat(x.P.reps), k = parseFloat(x.P.kg) || 0; if (k > kg) kg = k;
+      var r = parseFloat(x.P.reps), k = parseFloat(x.P.kg) || 0; if (k > kg) kg = k; kgs.push(k);
       if (r < x.rg[1]) allTop = false; if (r < x.rg[0]) anyLow = true;
       min = Math.min(min, x.rg[0]); max = Math.max(max, x.rg[1]);
     });
-    if (allTop && kg) { var nk = kg + stepKg(kg); return { p: 1, t: "⬆️ " + ex.n + ": sube de " + kgTxt(kg) + " a " + kgTxt(nk) + " kg y vuelve a " + min + " reps." }; }
+    if (allTop && kg) { var nk = kg + stepKg(kg, ex, kgs); return { p: 1, t: "⬆️ " + ex.n + ": sube de " + kgTxt(kg) + " a " + kgTxt(nk) + " kg y vuelve a " + min + " reps." }; }
     if (allTop) return { p: 1, t: "⬆️ " + ex.n + ": llegaste arriba del rango; añade dificultad (más peso o más lento)." };
     if (anyLow) return { p: 3, t: "➡️ " + ex.n + ": mantén " + (kg ? kgTxt(kg) + " kg" : "el peso") + " y busca llegar a " + min + " reps en todas las series." };
     return { p: 2, t: "➕ " + ex.n + ": mismo peso" + (kg ? " (" + kgTxt(kg) + " kg)" : "") + ", intenta 1 rep más por serie (hasta " + max + ")." };
@@ -888,7 +897,7 @@
         return el("td", null, [el("b", { text: now.any ? f(v) : "—" }), p ? el("small", { text: "antes " + f(pv) }) : null, now.any && p ? delta(v, pv, unit) : null]);
       }
       var k = function (x) { return x ? num(x) : "—"; }, n = function (x) { return num(x); }, dv = ex.uni ? 2 : 1;
-      return el("tr", null, [el("th", { scope: "row", text: ex.n + (ex.uni ? " (por lado)" : "") }), cell(now.sets / dv, p && p.st.sets / dv, "", n),cell(now.reps, p && p.st.reps, "", n), cell(now.kg, p && p.st.kg, "kg", k)]);
+      return el("tr", null, [el("th", { scope: "row", text: ex.n + (ex.uni ? " (por lado)" : "") }), cell(now.sets / dv, p && p.st.sets / dv, "", n),cell(now.reps / dv, p && p.st.reps / dv, "", n), cell(now.kg, p && p.st.kg, "kg", k)]);
     });
     return el("section", { class: "card progress", id: "progress" }, [
       el("h2", { text: ST.readOnly ? "Progreso" : "Tu progreso" }),
@@ -933,8 +942,10 @@
         tds.push(el("td", { class: p ? (h >= p ? "full" : h > 0 ? "part" : "") : "zero" }, p ? [el("b", { text: num(h) }), el("small", { text: "/" + num(p) })] : ["·"]));
       });
       if (hasX) { var hx = (done[g] || [])[xi] || 0; tds.push(el("td", { class: hx ? "full" : "zero" }, hx ? [el("b", { text: num(hx) })] : ["·"])); }
-      var tp = sum(plan[g]), th = sum(done[g]);
-      tds.push(el("td", { class: "tot" }, [el("b", { text: num(th) }), el("small", { text: "/" + num(tp) }),
+      // la semana compara lo pautado hecho con lo pautado; lo no pautado se suma aparte («+N extra»)
+      var tp = sum(plan[g]), th = sum((done[g] || []).slice(0, xi)), tx = (done[g] || [])[xi] || 0;
+      tds.push(el("td", { class: "tot" }, [tp ? el("b", { text: num(th) }) : null, tp ? el("small", { text: "/" + num(tp) }) : null,
+        tx ? el("small", { class: "xtra", text: (tp ? " +" : "") + num(tx) + " extra" }) : null,
         el("div", { class: "bar" }, [el("i", { style: "width:" + (max ? tp / max * 100 : 0) + "%" }, [el("u", { style: "width:" + (tp ? Math.min(100, th / tp * 100) : 0) + "%" })])])]));
       return el("tr", null, tds);
     });
@@ -1006,7 +1017,7 @@
           var ex = dd && (dd.ej.filter(function (e) { return e.id === ex0.id; })[0] || dd.ej.filter(function (e) { return e.n === ex0.n; })[0]);
           var st = ex ? exStats(w, di, ex) : null;
           tons.push(st && st.any ? st.ton : null);
-          rows.push({ w: w, st: st, planned: ex ? ex.series.length : 0 });
+          rows.push({ w: w, st: st, planned: ex ? ex.series.length : 0, dv: ex && ex.uni ? 2 : 1 });
         }
         var t = trend(tons);
         var max = Math.max.apply(null, tons.map(function (v) { return v || 0; }));
@@ -1020,8 +1031,8 @@
             el("span", { class: "pval", text: has && ton ? num(ton) : "" }),
             el("div", { class: "ptrack" }, [el("div", { class: cls + (has ? "" : " empty"), style: "height:" + h + "%" })]),
             el("span", { class: "pwk", text: "S" + (r.w + 1) }),
-            el("span", { class: "pstat", text: has ? st.sets + "/" + r.planned + " ser" : "—" }),
-            el("span", { class: "pstat", text: has ? st.reps + " reps" : "" }),
+            el("span", { class: "pstat", text: has ? num(st.sets / r.dv) + "/" + num(r.planned / r.dv) + (r.dv > 1 ? " ser/lado" : " ser") : "—" }),
+            el("span", { class: "pstat", text: has ? num(st.reps / r.dv) + (r.dv > 1 ? " reps/lado" : " reps") : "" }),
             el("span", { class: "pstat", text: has && st.kg ? num(st.kg) + " kg máx" : "" })
           ]);
           if (has) prev = st;

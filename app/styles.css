@@ -238,3 +238,4 @@ button.prevhint{cursor:pointer;min-height:40px}
 .painlist li.bad::before{background:var(--danger)}
 .painlist li.more{color:var(--muted)}.painlist li.more::before{display:none}
 .stagetag{display:block;width:fit-content;margin-top:6px;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,#c792ea 22%,var(--surface2));color:#e7d3f7}
+.vtable .tot .xtra{display:block;color:var(--muted);font-size:11px}
