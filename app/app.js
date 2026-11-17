@@ -279,6 +279,9 @@
   function openClient(c, asCoach) {
     ST.client = c; ST.clientId = c.id; ST.readOnly = asCoach; ST.coachWrite = false; ST.editing = false; ST.dirty = false;
     UI = lsGet("eyl-ui-" + c.id, { w: null, d: 0, view: "entreno" });
+    if (!asCoach && /^(mas|nutri|segui|ciclo)$/.test(UI.view)) UI.view = "entreno"; // el cliente siempre entra por su entreno
+    ST.cicloTab = asCoach ? null : lsGet("eyl-ciclotab-" + c.id, null); // pestaña «Mi ciclo» solo para mujeres (se confirma al leer sus datos)
+    if (!asCoach) checkCicloTab(c);
     loading();
     Promise.all([api.getPlan(c.id), api.getLogs(c.id)]).then(function (r) {
       ST.PLAN = r[0];
@@ -306,6 +309,14 @@
       if (UI.w == null || UI.w >= ST.PLAN.semanas.length) UI.w = currentWeek();
       render();
     }).catch(function (x) { shell([topbar(), el("p", { class: "err", text: errMsg(x) })]); });
+  }
+  function checkCicloTab(c) {
+    if (!window.EYLNutri || !window.EYLNutri.isWoman || !api.sb) return;
+    window.EYLNutri.isWoman({ sb: api.sb, client: c }).then(function (t) {
+      if (t === null || ST.clientId !== c.id || ST.mode === "entrenador") return;
+      t = t || null; lsSet("eyl-ciclotab-" + c.id, t);
+      if (t !== ST.cicloTab) { ST.cicloTab = t; if (ST.PLAN && document.querySelector("header.top.withseg")) render(); }
+    });
   }
   function intakeScreen(c) {
     shell([topbar(),
@@ -410,9 +421,15 @@
     } })));
     else kids.push(topbar());
     kids.push(header());
-    if (UI.view === "nutri" && !ST.editing) {
+    if (UI.view === "ciclo" && ST.cicloTab && !ST.editing) {
+      kids.push(cicloView());
+    } else if (UI.view === "mas" && !ST.editing) {
+      kids.push(masView());
+    } else if (UI.view === "nutri" && !ST.editing) {
+      if (ST.mode !== "entrenador") kids.push(backToMas());
       kids.push(nutriView());
     } else if (UI.view === "segui" && !ST.editing) {
+      if (ST.mode !== "entrenador") kids.push(backToMas());
       kids.push(seguiView());
     } else if (UI.view === "volumen" && !ST.editing) {
       kids.push(nav(true)); kids.push(volumeView());
@@ -429,9 +446,11 @@
       if (ST.editing) main.appendChild(editDayHead(d));
       else main.appendChild(dateRow());
       if (d.libre && !ST.editing) main.appendChild(extraHead());
-      if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = "nutri"; render(); window.scrollTo(0, 0); } }));
+      if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = ST.cicloTab ? "ciclo" : "nutri"; render(); window.scrollTo(0, 0); } }));
       if (!ST.editing && window.EYLEtapa && api.sb) main.appendChild(window.EYLEtapa.banner({ sb: api.sb, client: ST.client, coach: ST.mode === "entrenador", flash: flash }));
       if (!ST.editing && list.length && !d.libre && UI.d < 100) main.appendChild(briefCard(d));
+      if (!ST.editing && ST.mode !== "entrenador" && !ST.readOnly && window.EYLHoy && api.sb) main.appendChild(window.EYLHoy.card({ sb: api.sb, client: ST.client, flash: flash,
+        go: function (view, k) { UI.view = view; UI.sgTab = k === "checkin" ? "checkin" : null; render(); window.scrollTo(0, 0); } }));
       if (!ST.editing && list.length) main.appendChild(prepCard());
       if (!list.length && !ST.editing && !d.libre) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
       list.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
@@ -456,7 +475,32 @@
   }
   function seguiView() {
     if (!window.EYLSegui || !api.sb) return el("p", { class: "err", text: "No se pudo cargar el control. Recarga la página." });
-    return window.EYLSegui.view({ sb: api.sb, coach: ST.mode === "entrenador", client: ST.client, flash: flash });
+    var tab = UI.sgTab; UI.sgTab = null;
+    return window.EYLSegui.view({ sb: api.sb, coach: ST.mode === "entrenador", client: ST.client, flash: flash, tab: tab });
+  }
+  // Clienta: «Mi ciclo» reúne la cuenta atrás, las fases y su etapa (menopausia, embarazo o posparto).
+  function cicloView() {
+    var main = el("main", { class: "day ciclo" });
+    if (window.EYLNutri && window.EYLNutri.cycleView && api.sb) main.appendChild(window.EYLNutri.cycleView({ sb: api.sb, client: ST.client, flash: flash }));
+    if (window.EYLEtapa && window.EYLEtapa.page && api.sb) main.appendChild(window.EYLEtapa.page({ sb: api.sb, client: ST.client, flash: flash, onChange: function () { checkCicloTab(ST.client); if (UI.view === "ciclo") render(); } }));
+    return main;
+  }
+  // Cliente: Nutrición y Control quedan dentro de «Más» para que el inicio sea solo el entreno.
+  function masView() {
+    function item(icon, t, s, view) {
+      return el("button", { type: "button", class: "masitem", onclick: function () { UI.view = view; render(); window.scrollTo(0, 0); } }, [
+        el("span", { class: "masi", "aria-hidden": "true", text: icon }),
+        el("span", { class: "mast" }, [el("b", { text: t }), el("small", { text: s })]),
+        el("span", { class: "chev", "aria-hidden": "true", text: "›" })]);
+    }
+    return el("main", { class: "day mas" }, [
+      el("p", { class: "maslead", text: "Lo importante está en Entreno. Aquí tienes lo demás, para cuando lo necesites." }),
+      item("🍽️", "Nutrición", "Tu plan de comidas, peso, medidas y fotos", "nutri"),
+      item("📋", "Control", "Check-in semanal, tests y qué hacer si algo duele", "segui")
+    ]);
+  }
+  function backToMas() {
+    return el("div", { class: "masback" }, [el("button", { type: "button", class: "btn ghost", text: "‹ Más", onclick: function () { UI.view = "mas"; render(); window.scrollTo(0, 0); } })]);
   }
   var leaveArmed = false;
   function confirmLeave() { if (leaveArmed) { leaveArmed = false; return true; } leaveArmed = true; flash("Tienes cambios sin guardar. Pulsa otra vez para salir sin guardar."); setTimeout(function () { leaveArmed = false; }, 4000); return false; }
@@ -473,9 +517,14 @@
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "entreno"), class: UI.view === "entreno" ? "on" : "", text: "Entreno", onclick: function () { UI.view = "entreno"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "volumen"), class: UI.view === "volumen" ? "on" : "", text: "Volumen", onclick: function () { UI.view = "volumen"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "progresion"), class: UI.view === "progresion" ? "on" : "", text: "Progresión", onclick: function () { UI.view = "progresion"; render(); } }),
+      ].concat(ST.mode === "entrenador" ? [
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "nutri"), class: UI.view === "nutri" ? "on" : "", text: "Nutrición", onclick: function () { UI.view = "nutri"; render(); } }),
         el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "segui"), class: UI.view === "segui" ? "on" : "", text: "Control", onclick: function () { UI.view = "segui"; render(); } })
-      ])
+      ] : (ST.cicloTab ? [
+        el("button", { type: "button", role: "tab", "aria-selected": String(UI.view === "ciclo"), class: UI.view === "ciclo" ? "on" : "", text: ST.cicloTab, onclick: function () { UI.view = "ciclo"; render(); window.scrollTo(0, 0); } })
+      ] : []).concat([
+        el("button", { type: "button", role: "tab", "aria-selected": String(/^(mas|nutri|segui)$/.test(UI.view)), class: /^(mas|nutri|segui)$/.test(UI.view) ? "on" : "", text: "Más", onclick: function () { UI.view = "mas"; render(); } })
+      ])))
     ]);
   }
   function nav(weeksOnly) {
@@ -703,6 +752,7 @@
     var body = el("div", { class: "exbody" });
     c.appendChild(body);
     if (ex.nota) body.appendChild(el("p", { class: "note", text: ex.nota }));
+    if (window.EYLHoy) { var como = window.EYLHoy.block(ex, ST.clientId); if (como) body.appendChild(como); }
     if (ex.link) body.appendChild(el("a", { class: "vid", href: ex.link, target: "_blank", rel: "noopener", text: "Ver vídeo del ejercicio" }));
     ex.series.forEach(function (s, si) {
       var S = setLog(ex, si);

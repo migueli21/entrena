@@ -66,7 +66,7 @@ function cyclePhase(c,d){if(!d)return["na",""];const k=c.ciclo,L=k.len||28,bl=k.
  if(k.anticonceptivo)return d<=bl?["m","Sangrado"]:["ac","Sin fases calculadas"];
  if(d<=bl)return["m","Regla"];
  if(k.regular===false)return["ir","Ciclo irregular"];
- if(d>L)return["rt","Se retrasa"];
+ if(d>L+1)return["rt","Se retrasa"]; /* el día L+1 es el previsto: aún no es retraso */
  if(d>L-7)return["pm","Premenstrual"];
  const ov=L-14;if(d<ov-1)return["fo","Folicular"];if(d<=ov+1)return["ov","Ovulación"];return["lu","Lútea"]}
 function cycMark(c,date){const k=c.ciclo;const st=[...new Set([...cycStarts(c),date])].sort();k.hist=st;k.inicio=st[st.length-1];cycLen(c)}
@@ -77,7 +77,7 @@ function cycLen(c){const st=cycStarts(c),g=[];for(let i=1;i<st.length;i++){const
 const CYC_SINT=[["dolor","Dolor de regla"],["dolorf","Dolor fuerte"],["hinchazon","Hinchazón"],["cansancio","Cansancio"],["humor","Cambios de humor"],["cabeza","Dolor de cabeza"],["sueno","Dormí mal"],["hambre","Más hambre"]];
 const CYC_GRUPOS=[["m","Regla"],["fo","Folicular"],["ov","Ovulación"],["lu","Lútea"],["pm","Premenstrual"]];
 function cycTip(c,d,ph){const k=c.ciclo;
- if(ph==="rt")return`Tu regla se retrasa ${d-(k.len||28)} día${d-(k.len||28)===1?"":"s"}. Márcala cuando llegue. Si se repite, coméntalo con tu entrenador.`;
+ if(ph==="rt")return`Tu regla se retrasa ${d-1-(k.len||28)} día${d-1-(k.len||28)===1?"":"s"}. Márcala cuando llegue. Si se repite, coméntalo con tu entrenador.`;
  if(ph==="ac")return"Con anticonceptivo hormonal no calculamos fases, porque dependen del método. Lo útil es apuntar cómo te sientes.";
  if(ph==="ir")return"Con un ciclo irregular no predecimos fechas. Marca tu regla cuando llegue y apunta cómo te sientes.";
  if(ph==="m")return"La báscula puede marcar algo más estos días por el agua: no es grasa.";
@@ -109,6 +109,31 @@ function cycFromInt(c,d){if(d.sexo!=="m"||d.cicloRegular==="na")return;const reg
  if(d.cicloInicio)c.ciclo={regular:reg,len:28,sangrado:5,inicio:d.cicloInicio,hist:[d.cicloInicio],anticonceptivo:ac}}
 function cycWoman(c){return c.sexo==="m"||((c.entrevistaCli||{}).data||{}).sexo==="m"}
 function cycNA(c){return((c.entrevistaCli||{}).data||{}).cicloRegular==="na"}
+/* ---- Pestaña «Mi ciclo» (clienta): cuenta atrás, fases explicadas y lo de siempre (apuntar regla, síntomas, patrón) ---- */
+function cycCountdown(c){const k=c.ciclo;if(!k||!k.inicio)return null;const cd=cycleDay(c,TODAY),[ph]=cyclePhase(c,cd);
+ if(k.anticonceptivo)return{big:ph==="m"?`Día ${cd} de sangrado`:"Con anticonceptivo",sub:"Tu sangrado depende del método, así que no hacemos cuenta atrás. Apunta cómo te sientes."};
+ if(k.regular===false)return{big:ph==="m"?`Día ${cd} de regla`:`Día ${cd} desde tu regla`,sub:"Con un ciclo irregular no predecimos la fecha. Márcala cuando llegue."};
+ const L=k.len||28,next=addD(k.inicio,L),n=diffD(TODAY,next);
+ if(ph==="m")return{big:`Día ${cd} de regla`,sub:`La siguiente, hacia el ${fmtDL(addD(k.inicio,L))}.`};
+ if(n>1)return{big:`Faltan ${n} días`,sub:`para tu regla, prevista el ${fmtDL(next)}.`};
+ if(n===1)return{big:"Mañana",sub:"te toca la regla, según tu ciclo."};
+ if(n===0)return{big:"Hoy",sub:"te toca la regla, según tu ciclo. Si te ha bajado, márcalo abajo."};
+ return{big:`Se retrasa ${-n} día${n===-1?"":"s"}`,sub:"Márcala cuando llegue. Un retraso suelto es normal (estrés, viajes, dormir poco); si se repite, coméntalo con tu entrenador."}}
+/* Qué pasa en cada fase: fisiología básica, sin cifras */
+const CYC_INFO={m:"Bajan el estrógeno y la progesterona y empieza el sangrado. Es normal notar dolor, cansancio o menos ganas.",
+ fo:"El estrógeno va subiendo. Muchas mujeres se notan con más energía y mejor ánimo.",
+ ov:"El estrógeno llega a su punto más alto y se libera el óvulo.",
+ lu:"Sube la progesterona: la temperatura del cuerpo sube un poco y puedes tener algo más de hambre.",
+ pm:"Las hormonas bajan antes de la regla: puede haber retención de líquido, hinchazón, antojos o cambios de humor."};
+function cycRanges(c){const k=c.ciclo,L=k.len||28,R={};for(let d=1;d<=L;d++){const p=cyclePhase(c,d)[0];if(!R[p])R[p]=[d,d];else R[p][1]=d}return R}
+function cycPhasesHTML(c){const k=c.ciclo;if(!k||!k.inicio||k.anticonceptivo||k.regular===false)return"";const cur=cyclePhase(c,cycleDay(c,TODAY))[0],R=cycRanges(c);
+ const items=CYC_GRUPOS.filter(([p])=>R[p]).map(([p,l])=>{const[a,b]=R[p],ad=CYC_ADV[p];return`<details class="ncph ${p}"${p===cur?" open":""}><summary><i></i><b>${l}</b><span class="nmuted">días ${a===b?a:a+"–"+b}</span>${p===cur?'<span class="nchip">Ahora</span>':""}</summary>
+  <p>${CYC_INFO[p]}</p><div class="ncycadv"><div><b>🍽️ En tu plato</b><span>${ad[0]}</span></div><div><b>🏋️ En tu entreno</b><span>${ad[1]}</span></div></div></details>`}).join("");
+ return`<div class="npanel"><h2>Tus fases</h2><p class="nsmall nmuted">Calculadas con tu ciclo de ${k.len||28} días. Toca una para verla.</p>${items}
+  <p class="nsmall nmuted">Tu plan no cambia por la fase: los estudios ven diferencias muy pequeñas y distintas en cada mujer, así que lo que manda es cómo te sientes cada día (<a href="https://doi.org/10.1007/s40279-020-01319-3" target="_blank" rel="noopener">McNulty et al. 2020</a>). Las fechas son una estimación: no sirven como método anticonceptivo.</p></div>`}
+function cyclePageHTML(c){if(!cycWoman(c)||(cycNA(c)&&!(c.ciclo&&c.ciclo.inicio)))return"";
+ const cdn=cycCountdown(c);
+ return`<span id="nsync" class="nsmall nmuted"></span>${cdn?`<div class="ncd"><b>${cdn.big}</b><span>${cdn.sub}</span></div>`:""}${cCiclo(c)}${cycPhasesHTML(c)}`}
 function regress(pts){const n=pts.length;if(n<2)return 0;const x0=pts[0][0];let sx=0,sy=0,sxx=0,sxy=0;pts.forEach(([d,w])=>{const x=diffD(x0,d);sx+=x;sy+=w;sxx+=x*x;sxy+=x*w});return(n*sxy-sx*sy)/(n*sxx-sx*sx||1)}
 function calc(c){
  const ffm=c.grasa?c.peso*(1-c.grasa/100):null;
@@ -430,9 +455,13 @@ window.EYLNutri={intakeCheck:function(o){const id=o.client.id;return Promise.all
   if(CYCC[id]){cycBannerFill(box,CYCC[id].ciclo,o.go);return box}
   o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle().then(r=>{const k=r&&r.data&&r.data.data?r.data.data.ciclo:null;CYCC[id]={ciclo:k||null};cycBannerFill(box,k,o.go)},()=>{});return box},
  cycleToday:function(o){const id=o.client&&o.client.id;if(!id)return Promise.resolve(null);const f=k=>{if(!k||!k.inicio)return null;const c={ciclo:k};const d=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,d);return{dia:d,fase:ph,label:lab,entreno:(CYC_ADV[ph]||CYC_ADV.gen)[1]}};if(CYCC[id])return Promise.resolve(f(CYCC[id].ciclo));return o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle().then(r=>{const k=r&&r.data&&r.data.data?r.data.data.ciclo:null;CYCC[id]={ciclo:k||null};return f(k)},()=>null)},
- view:function(o){const root=document.createElement("div");root.className="nu";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando nutrición…</p>';start(o,root);return root}};
+ view:function(o){const root=document.createElement("div");root.className="nu";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando nutrición…</p>';start(o,root);return root},
+ cycleView:function(o){const root=document.createElement("div");root.className="nu nuciclo";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando tu ciclo…</p>';start(Object.assign({},o,{only:"ciclo",coach:false,onDone:null}),root);return root},
+ isWoman:function(o){const id=o.client&&o.client.id;if(!id)return Promise.resolve(false);return Promise.all([o.sb.from("nutri_plan").select("data").eq("cliente_id",id).maybeSingle(),o.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle()]).then(([a,b])=>{if(a.error||b.error)return null;const c={...(a.data?a.data.data:{}),...(b.data?b.data.data:{})};if(!cycWoman(c))return false;const et=c.etapa||{},tipo=et.tipo||((c.entrevistaCli||{}).data||{}).situacion;
+  /* nombre de la pestaña: «Mi etapa» si ya no hay reglas que seguir (embarazo, posparto, posmenopausia o sin regla) */
+  return(tipo==="embarazo"||tipo==="posparto"||(tipo==="menopausia"&&(et.meno==="post"||/^post/.test(et.estadio||"")))||(cycNA(c)&&!(c.ciclo&&c.ciclo.inicio)))?"Mi etapa":"Mi ciclo"},()=>null)}};
 async function start(o,root){
- S={root,sb:o.sb,coach:!!o.coach,flash:o.flash||function(){},intake:o.onDone||null,intakeDone:false,tab:"resumen",ctab:"inicio",dayIdx:0,wk:weekStart(addD(TODAY,o.coach?1:0)),selDay:null,openEq:null,wiz:null,qedit:false,draft:{}};
+ S={root,sb:o.sb,coach:!!o.coach,only:o.only||null,flash:o.flash||function(){},intake:o.onDone||null,intakeDone:false,tab:"resumen",ctab:"inicio",dayIdx:0,wk:weekStart(addD(TODAY,o.coach?1:0)),selDay:null,openEq:null,wiz:null,qedit:false,draft:{}};
  bind(root);
  try{const id=o.client.id;
   const [a,b]=await Promise.all([S.sb.from("nutri_plan").select("data").eq("cliente_id",id).maybeSingle(),S.sb.from("nutri_cliente").select("data").eq("cliente_id",id).maybeSingle()]);
@@ -468,7 +497,7 @@ const img=(p,alt)=>`<img data-path="${esc(p)}" alt="${esc(alt)}">`;
 /* ======================= RENDER ======================= */
 const faseTxt={volumen:"Volumen",definicion:"Definición",mantenimiento:"Mantenimiento"};
 const L=l=>"l-"+l;
-function render(){const c=S.c;S.root.innerHTML=S.coach?coachHTML(c):clientHTML(c);hydrate();const b=S.root.querySelector(".nmsgs");if(b)b.scrollTop=b.scrollHeight}
+function render(){const c=S.c;S.root.innerHTML=S.only==="ciclo"?cyclePageHTML(c):S.coach?coachHTML(c):clientHTML(c);hydrate();const b=S.root.querySelector(".nmsgs");if(b)b.scrollTop=b.scrollHeight}
 function checksHTML(list){return `<ul class="nchecks">${list.map(([l,t])=>`<li class="${L(l)}"><i></i><span>${esc(t)}</span></li>`).join("")}</ul>`}
 function alertsHTML(A){return `<div class="nalerts">${A.map(([t,ti,tx,go])=>`<div class="nalert ${L(t)}"><i></i><div><b>${ti}</b><span>${tx}</span></div>${go&&S.coach?`<button class="btn ghost small" data-tab="${go==="asistente"?"resumen":go}">Ver</button>`:"<span></span>"}</div>`).join("")||'<p class="nmuted">Sin avisos.</p>'}</div>`}
 function mealsList(meals){return meals.filter(m=>m[2]||m[1].length).map(m=>`<div class="nmealq"><div class="nrow nbetween"><b>${esc(m[0])}</b><span class="nnum nsmall">${r0(macros([m]).k)} kcal</span></div>
@@ -787,7 +816,7 @@ function cCiclo(c){
  const k=c.ciclo,cd=cycleDay(c,TODAY),[ph,lab]=cyclePhase(c,cd),hoy=(c.cicloLog||{})[TODAY]||{},sint=hoy.s||[];
  return`<div class="npanel"><div class="nrow nbetween"><h2>Tu ciclo</h2><span class="nchip">Día ${cd}${k.regular===false||k.anticonceptivo?"":` de ${k.len||28}`} · ${lab}</span></div>
   ${cycBarHTML(c,cd)}
-  <p class="nsmall">${cycTip(c,cd,ph)}</p>${cycAdvHTML(ph,sint)}${cycNext(c)?`<p class="nsmall nmuted">${cycNext(c)}</p>`:""}
+  <p class="nsmall">${cycTip(c,cd,ph)}</p>${cycAdvHTML(ph,sint)}${cycNext(c)&&S.only!=="ciclo"?`<p class="nsmall nmuted">${cycNext(c)}</p>`:""}
   <div class="nrow"><button class="btn primary small" data-act="cycreg">Me ha bajado hoy</button><button class="btn ghost small" data-act="cycotro" aria-expanded="${!!S.cycOtro}">Fue otro día</button></div>
   ${S.cycOtro?`<form class="nrow" data-form="cicloini"><label class="nf" style="flex:1 1 140px">Primer día de la regla<input type="date" name="fecha" max="${TODAY}" required></label><button class="btn primary small" type="submit" style="align-self:end">Guardar</button></form>`:""}
   <h3>¿Cómo estás hoy?</h3>

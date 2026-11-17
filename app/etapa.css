@@ -23,3 +23,24 @@
 .etsrc a{color:var(--accent)}
 @media (max-width:360px){.etseg{grid-template-columns:repeat(2,1fr)}}
 .etbanner .btn.small{min-height:40px;padding:6px 12px;font-size:14px;border-radius:10px}
+/* página de etapa dentro de «Mi ciclo» */
+.etpage{display:grid;gap:14px;margin-top:14px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.etpage .ethead{align-items:center}
+.etpage .ethead h2{font-size:22px}
+.etprop{display:grid;gap:6px;padding:12px 14px;border-radius:12px;border:1px solid #c792ea;background:color-mix(in srgb,#c792ea 10%,var(--surface));font-size:14px;line-height:1.4;color:var(--muted)}
+.etprop b{color:var(--fg);font-size:16px}
+.etrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.etrow .btn.small,.etpage .btn.small{min-height:44px;padding:8px 14px;font-size:14px;border-radius:10px}
+.ettl{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:relative}
+.ettl li{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;font-size:11px;line-height:1.2;color:var(--muted)}
+.ettl li i{width:14px;height:14px;border-radius:50%;background:var(--surface2);border:2px solid var(--line)}
+.ettl li.fmp i{border-radius:3px;transform:rotate(45deg);background:var(--line)}
+.ettl li.on{color:var(--fg);font-weight:700}
+.ettl li.on i{background:#c792ea;border-color:#c792ea;box-shadow:0 0 0 4px color-mix(in srgb,#c792ea 25%,transparent)}
+.etstages{display:grid;gap:6px}
+.etstages button{display:grid;gap:2px;text-align:left;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.etstages button span{font-size:13px;color:var(--muted);line-height:1.35}
+.etstages button.on{border-color:#c792ea;background:color-mix(in srgb,#c792ea 14%,var(--surface))}
+.etmore summary{cursor:pointer;font-weight:700;min-height:32px;display:flex;align-items:center}
+.etguide p{margin:8px 0;font-size:14px;line-height:1.45;color:var(--muted)}
+.etguide b{color:var(--fg)}

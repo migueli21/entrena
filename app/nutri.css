@@ -158,3 +158,14 @@
 .ncycadv>div{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--line);font-size:14px;line-height:1.4;color:var(--muted)}
 .ncycadv b{color:var(--fg);font-size:14px}
 .ncycadv .hoy{border-color:#d6a84a}
+/* Mi ciclo (pestaña de la clienta) */
+.nu .ncd{display:flex;flex-direction:column;gap:4px;padding:18px 16px;border-radius:14px;background:linear-gradient(135deg,rgba(255,107,94,.16),rgba(214,168,74,.10));border:1px solid var(--line)}
+.nu .ncd b{font-family:var(--display);font-size:34px;line-height:1.05;letter-spacing:.3px}
+.nu .ncd span{font-size:15px;color:var(--muted);line-height:1.4}
+.nu .ncph{border-top:1px solid var(--line);padding:10px 0}
+.nu .ncph summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;min-height:32px}
+.nu .ncph summary::-webkit-details-marker{display:none}
+.nu .ncph summary i{width:12px;height:12px;border-radius:3px;flex:none;background:var(--surface2)}
+.nu .ncph.m summary i{background:var(--danger)} .nu .ncph.fo summary i{background:var(--accent)} .nu .ncph.ov summary i{background:var(--gold)} .nu .ncph.lu summary i{background:var(--info)} .nu .ncph.pm summary i{background:var(--band);outline:1px solid var(--danger)}
+.nu .ncph summary .nchip{margin-left:auto}
+.nu .ncph p{margin:6px 0 0;font-size:14px;line-height:1.45}

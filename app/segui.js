@@ -124,7 +124,7 @@ let S=null;
 function defaults(){return{checkins:{},tests:[]}}
 window.EYLSegui={view:function(o){const root=document.createElement("div");root.className="nu sg";root.innerHTML='<p class="nmuted" style="text-align:center;padding:40px 0">Cargando…</p>';start(o,root);return root}};
 async function start(o,root){
- S={root,sb:o.sb,coach:!!o.coach,flash:o.flash||function(){},id:o.client.id,nombre:o.client.nombre||"",tab:"control",zona:null,editCi:false,newTest:false};
+ S={root,sb:o.sb,coach:!!o.coach,flash:o.flash||function(){},id:o.client.id,nombre:o.client.nombre||"",tab:o.tab||"control",zona:null,editCi:false,newTest:false};
  bind(root);
  try{
   const [a,b]=await Promise.all([S.sb.from("seguimiento").select("data").eq("cliente_id",S.id).maybeSingle(),S.sb.from("nutri_cliente").select("data").eq("cliente_id",S.id).maybeSingle()]);

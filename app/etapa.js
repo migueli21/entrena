@@ -17,8 +17,44 @@
     ioc: ["COI: ejercicio en el posparto (2017)", "10.1136/bjsports-2017-097964"],
     lift: ["LIFTMOR: fuerza pesada e impacto en posmenopausia (2018)", "10.1002/jbmr.3284"],
     bmd: ["Metaanálisis: fuerza e impacto y densidad ósea en la menopausia (2026)", "10.1097/GME.0000000000002839"],
-    life: ["Metaanálisis: fuerza en mujeres de todas las edades (2026)", "10.1016/j.jsams.2026.03.002"]
+    life: ["Metaanálisis: fuerza en mujeres de todas las edades (2026)", "10.1016/j.jsams.2026.03.002"],
+    straw: ["STRAW+10: etapas del envejecimiento reproductivo (2012)", "10.1210/jc.2011-3362"],
+    swan: ["SWAN: grasa y músculo en la transición menopáusica (2019)", "10.1172/jci.insight.124865"],
+    aha: ["AHA: menopausia y riesgo cardiovascular (2020)", "10.1161/CIR.0000000000000912"],
+    nams: ["The Menopause Society: sofocos sin hormonas (2023)", "10.1097/GME.0000000000002200"],
+    prot: ["Proteína y fuerza para no perder músculo al adelgazar (2021)", "10.3390/nu13072473"],
+    whey: ["Metaanálisis: proteína en posmenopausia, solo útil con fuerza (2022)", "10.3390/nu14194210"]
   };
+  // etapas de la menopausia (STRAW+10). El corte de 6 años entre posmenopausia temprana y tardía es criterio práctico (STRAW+10 da 5-8 años).
+  var EST = {
+    peri1: { t: "Perimenopausia temprana", d: "Tus ciclos empiezan a cambiar: de un mes a otro hay 7 días o más de diferencia en lo que duran. Puede durar varios años." },
+    peri2: { t: "Perimenopausia tardía", d: "Pasan 60 días o más entre una regla y otra. Suele durar de 1 a 3 años y es cuando más aparecen los sofocos." },
+    post1: { t: "Posmenopausia temprana", d: "Los primeros 5 a 8 años sin regla. Las hormonas terminan de estabilizarse y los sofocos aún son frecuentes." },
+    post2: { t: "Posmenopausia tardía", d: "Desde unos 6 años después de tu última regla. Los cambios van más despacio y pueden ganar peso la sequedad vaginal y las molestias al orinar." }
+  };
+  var EORD = ["peri1", "peri2", "fmp", "post1", "post2"];
+  function postStage(ultima) { return diffD(ultima, TODAY) / 365.25 < 6 ? "post1" : "post2"; }
+  function starts(k) { if (!k) return []; var a = (k.hist || []).concat(k.inicio ? [k.inicio] : []), u = {}; a.forEach(function (x) { if (x) u[x] = 1; }); return Object.keys(u).sort(); }
+  // propuesta automática a partir de las reglas apuntadas (o de la última regla que ella indique). Solo desde los 40 (criterio práctico: antes, un ciclo así es para el médico).
+  function propose(k, ent, et) {
+    et = et || {}; ent = ent || {};
+    if (et.tipo === "embarazo" || et.tipo === "posparto") return null;
+    if (k && k.anticonceptivo) return null;
+    var age = +ent.edad || 0;
+    if (age && age < 40) return null;
+    if (!age && et.tipo !== "menopausia" && ent.situacion !== "menopausia") return null;
+    var st = starts(k), last = st.length ? st[st.length - 1] : et.ultima || null;
+    if (!last) return null;
+    var since = diffD(last, TODAY);
+    if (since >= 365) { var m = Math.round(since / 30.44), y = Math.floor(since / 365.25); return { estadio: postStage(last), why: "Llevas " + (y < 2 ? m + " meses" : y + " años") + " sin regla." }; }
+    var g = []; for (var i = 1; i < st.length; i++) g.push(diffD(st[i - 1], st[i]));
+    g = g.slice(-10);
+    if (since >= 60) return { estadio: "peri2", why: "Llevas " + since + " días sin regla." };
+    if (g.some(function (x) { return x >= 60; })) return { estadio: "peri2", why: "Entre dos de tus últimas reglas pasaron 60 días o más." };
+    var n = 0; for (var j = 1; j < g.length; j++) if (Math.abs(g[j] - g[j - 1]) >= 7) n++;
+    if (n >= 2) return { estadio: "peri1", why: "Tus últimos ciclos han cambiado 7 días o más de duración varias veces." };
+    return null;
+  }
 
   // ---- estado actual a partir de los datos ----
   function state(et, ent) {
@@ -33,12 +69,13 @@
       if (diffD(et.fpp, TODAY) > 21) s.pasada = true; // ya debería haber dado a luz
     }
     if (tipo === "posparto" && et.parto) { s.sem = Math.max(0, Math.floor(diffD(et.parto, TODAY) / 7)); s.fase = s.sem < 6 ? 1 : s.sem < 12 ? 2 : 3; }
-    if (tipo === "menopausia") s.meno = et.meno || "";
+    if (tipo === "menopausia") { s.estadio = EST[et.estadio] ? et.estadio : null; s.meno = s.estadio ? s.estadio.slice(0, 4) : et.meno || ""; }
     return s;
   }
   function title(s) {
     if (s.tipo === "embarazo") return s.sem ? "Embarazo · semana " + s.sem + " (" + s.tri + ".º trimestre)" : "Embarazo";
     if (s.tipo === "posparto") return s.sem != null ? "Posparto · semana " + s.sem + (s.et.cesarea ? " · cesárea" : "") : "Posparto";
+    if (s.estadio) return EST[s.estadio].t;
     return s.meno === "peri" ? "Perimenopausia" : s.meno === "post" ? "Posmenopausia" : "Menopausia";
   }
   function label(et, ent) { var s = state(et, ent); return s ? title(s) : null; }
@@ -57,12 +94,14 @@
         "Fuerza con cargas ligeras y buena técnica. Sube poco a poco si no hay pérdidas, pesadez ni dolor.",
         "Si no tienes síntomas, puedes ir subiendo cargas y metiendo impacto de forma progresiva."][s.fase - 1];
     }
+    if (s.estadio === "peri1" || s.estadio === "peri2") return "Ajusta el día a cómo estás, no al calendario, pero no te saltes la fuerza: ahora es cuando más protege tu músculo.";
+    if (s.estadio === "post2") return "Fuerza con cargas que cuesten, equilibrio y caminar: lo que te mantiene fuerte y ágil.";
     return "La fuerza es tu mejor aliada: cargas que cuesten de verdad (deja 1-3 repeticiones), progresando poco a poco.";
   }
 
   // ---- contenido completo ----
   function content(s) {
-    var e = s.et, T = [], P = [], A = [], src = [];
+    var e = s.et, T = [], P = [], A = [], F = [], src = [];
     if (s.tipo === "embarazo") {
       T.push("Si tu médico o matrona no te lo ha desaconsejado, entrenar es seguro y recomendable: al menos 150 minutos a la semana de actividad moderada, repartidos en 3 días o más, mezclando fuerza y cardio.");
       T.push("Intensidad: que puedas hablar mientras entrenas. En fuerza, deja 2-3 repeticiones en la recámara y no bloquees la respiración: suelta el aire al hacer fuerza.");
@@ -91,22 +130,33 @@
       A = ["Pérdidas de orina o gases al hacer esfuerzo, toser o saltar", "Sensación de bulto o pesadez en la vagina", "Dolor en la pelvis, en la zona lumbar o en la cicatriz al entrenar", "La tripa se abomba en el centro al hacer fuerza (posible diástasis)", "El sangrado vuelve a aumentar con el ejercicio", "Tristeza, ansiedad o falta de ganas que no se van (habla con tu médico)"];
       src = [SRC.ioc, SRC.acog];
     } else {
+      var es = s.estadio;
       T.push("La fuerza es tu mejor aliada: 2-3 días por semana con cargas que cuesten de verdad (deja 1-3 repeticiones en la recámara), subiendo poco a poco. Protege el músculo y el hueso.");
-      T.push("Para el hueso funcionan las cargas altas y el impacto: sentadilla, peso muerto, press y saltos sencillos, siempre con buena técnica y si tus articulaciones y tu suelo pélvico lo toleran.");
+      if (es === "peri1" || es === "peri2") T.push("Desde que empieza este cambio y hasta unos 2 años después de la última regla, el cuerpo gana grasa el doble de rápido y pierde músculo. Por eso ahora es cuando más cuenta no saltarte la fuerza.");
+      if (es === "post1") T.push("En los 2 primeros años después de tu última regla todavía se pierde músculo y se gana grasa más deprisa: prioriza la fuerza. Después los cambios se frenan.");
+      if (es === "post2") T.push("Los cambios del cuerpo ya van más despacio: lo importante es mantener la fuerza que tienes y seguir subiendo poco a poco.");
+      T.push("Para el hueso funcionan las cargas altas y el impacto: sentadilla, peso muerto, press y saltos sencillos, siempre con buena técnica, subiendo poco a poco y si tus articulaciones y tu suelo pélvico lo toleran.");
+      T.push("Suma cardio casi todos los días (caminar a buen ritmo, bici, nadar): con la menopausia sube el riesgo del corazón y este es el momento de cuidarlo.");
       T.push("Añade equilibrio (apoyo a una pierna) y camina cada día.");
-      if (s.meno === "peri") T.push("En la perimenopausia los ciclos y la energía cambian mucho de un mes a otro: ajusta el día a cómo estás, no al calendario.");
-      P.push("Proteína en cada comida (unos 25-30 g: huevos, lácteos, carne, pescado o legumbres) para mantener el músculo.");
-      P.push("Calcio de lácteos, sardinas en lata con espina, almendras o bebidas vegetales enriquecidas.");
-      P.push("Si los sofocos empeoran con alcohol, café o picante, prueba a reducirlos y mira si notas cambio.");
-      A = ["Sangrado después de 12 meses sin regla: consúltalo con tu médico", "Dolor en el pecho, palpitaciones o falta de aire con el esfuerzo", "Dolor en un hueso tras un golpe pequeño o sin motivo", "Pérdidas de orina o pesadez en la vagina al entrenar (fisio de suelo pélvico)"];
-      src = [SRC.lift, SRC.bmd, SRC.life];
+      if (s.meno === "peri") T.push("En la perimenopausia los ciclos y la energía cambian mucho de un mes a otro: ajusta el día a cómo estás, no al calendario. Sigue apuntando tus reglas: así vemos cómo avanza.");
+      P.push("Proteína en cada comida (unos 25-30 g: huevos, lácteos, carne, pescado o legumbres) para mantener el músculo. Funciona sobre todo si la juntas con la fuerza.");
+      P.push("Si estás perdiendo peso, no bajes la proteína ni dejes la fuerza: así lo que pierdes es grasa y no músculo.");
+      P.push("Calcio de lácteos, sardinas en lata con espina, almendras o bebidas vegetales enriquecidas, todos los días.");
+      P.push("Vitamina D: pescado azul, huevos y algo de sol. Si tu médico la ve baja, te la pauta él.");
+      P.push("Para el corazón: aceite de oliva, verdura, fruta, legumbre, pescado y frutos secos a diario, y menos ultraprocesados.");
+      P.push("La báscula puede no moverse y aun así cambiar tu cuerpo (más grasa en la tripa, menos músculo): mira también tu cintura.");
+      F = ["Lo más eficaz para los sofocos es el tratamiento hormonal; también hay otros medicamentos y la terapia cognitivo-conductual. Pregunta a tu médico o ginecóloga.",
+        "Si te sobra peso, perderlo puede ayudar a tener menos sofocos.",
+        "Entrenar, quitar el café o el picante, la soja y los remedios de herbolario no han demostrado quitar los sofocos. Si a ti algo te los dispara, evítalo, y entrena en horas frescas y con ropa por capas para estar cómoda."];
+      A = ["Sangrado después de 12 meses sin regla: consúltalo con tu médico", "Reglas muy abundantes, que duran mucho o sangrado entre reglas: consúltalo con tu médico", "Dolor en el pecho, palpitaciones o falta de aire con el esfuerzo", "Dolor en un hueso tras un golpe pequeño o sin motivo", "Pérdidas de orina o pesadez en la vagina al entrenar (fisio de suelo pélvico)"];
+      src = [SRC.straw, SRC.swan, SRC.lift, SRC.bmd, SRC.life, SRC.aha, SRC.prot, SRC.whey, SRC.nams];
     }
-    return { T: T, P: P, A: A, src: src };
+    return { T: T, P: P, A: A, F: F, src: src };
   }
   // consejos por síntoma (menopausia)
   var SINT = [["sofocos", "Sofocos"], ["sueno", "Duermo mal"], ["articular", "Dolor articular"], ["animo", "Ánimo bajo"], ["peso", "Gano peso en la tripa"]];
   var SADV = {
-    sofocos: "Sofocos: entrena en horas frescas, con ropa por capas y agua a mano.",
+    sofocos: "Sofocos: entrena en horas frescas, con ropa por capas y agua a mano. Si te quitan el sueño o la vida normal, coméntalo con tu médico: hay tratamientos que funcionan.",
     sueno: "Si has dormido mal, baja una serie por ejercicio ese día, pero no lo dejes. Cenar pronto y una rutina fija ayudan.",
     articular: "Dolor articular: calienta más rato y usa rangos sin dolor. El ejercicio de fuerza suele mejorarlo con las semanas.",
     animo: "El ejercicio ayuda al ánimo. Si dura semanas, coméntalo con tu médico.",
@@ -119,15 +169,17 @@
     if (CACHE[id]) return Promise.resolve(CACHE[id]);
     return sb.from("nutri_cliente").select("data").eq("cliente_id", id).maybeSingle().then(function (r) {
       var d = r && r.data && r.data.data ? r.data.data : {};
-      CACHE[id] = { et: d.etapa || null, ent: (d.entrevistaCli || {}).data || {} }; return CACHE[id];
+      CACHE[id] = { et: d.etapa || null, ent: (d.entrevistaCli || {}).data || {}, ciclo: d.ciclo || null }; return CACHE[id];
     });
   }
   function save(sb, id, et) {
     return sb.from("nutri_cliente").select("data").eq("cliente_id", id).maybeSingle().then(function (cur) {
       if (cur.error) throw cur.error;
       var d = Object.assign({}, cur.data ? cur.data.data : {}); d.etapa = et;
+      // en la perimenopausia las reglas ya no son predecibles: el ciclo pasa a irregular (sin cuenta atrás ni avisos de retraso)
+      if (et.tipo === "menopausia" && et.estadio && d.ciclo && d.ciclo.inicio && d.ciclo.regular !== false) d.ciclo = Object.assign({}, d.ciclo, { regular: false });
       return sb.from("nutri_cliente").upsert({ cliente_id: id, data: d }).then(function (r) {
-        if (r.error) throw r.error; CACHE[id] = { et: et, ent: (d.entrevistaCli || {}).data || {} }; return CACHE[id];
+        if (r.error) throw r.error; CACHE[id] = { et: et, ent: (d.entrevistaCli || {}).data || {}, ciclo: d.ciclo || null }; return CACHE[id];
       });
     });
   }
@@ -156,6 +208,56 @@
   }
   function btn(t, cls) { var b = document.createElement("button"); b.type = "button"; b.className = cls; b.textContent = t; return b; }
 
+  function ul(a) { return "<ul>" + a.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>"; }
+  function sectionsHTML(s, et) {
+    var k = content(s), h = "";
+    h += '<section class="etsec"><h3>🏋️ En tu entreno</h3>' + ul(k.T) + "</section>";
+    if (s.tipo === "menopausia" && (et.sint || []).length) h += '<section class="etsec"><h3>Por cómo estás</h3>' + ul(et.sint.map(function (x) { return SADV[x]; }).filter(Boolean)) + "</section>";
+    h += '<section class="etsec"><h3>🍽️ En tu plato</h3>' + ul(k.P) + "</section>";
+    if (k.F.length) h += '<section class="etsec"><h3>🔥 Sofocos: lo que dice la evidencia</h3>' + ul(k.F) + "</section>";
+    h += '<section class="etsec etstop"><h3>🛑 Para y avisa' + (s.tipo === "menopausia" ? "" : " a tu médico o matrona") + " si…</h3>" + ul(k.A) + "</section>";
+    h += '<p class="etsrc">Pautas generales: no sustituyen a tu médico, matrona o fisio. Fuentes: ' + k.src.map(function (x) { return '<a href="https://doi.org/' + x[1] + '" target="_blank" rel="noopener">' + esc(x[0]) + "</a>"; }).join(" · ") + "</p>";
+    return h;
+  }
+  function timelineHTML(cur) {
+    return '<ol class="ettl">' + EORD.map(function (k) {
+      var t = k === "fmp" ? "Última regla" : EST[k].t.replace("Perimenopausia", "Peri").replace("Posmenopausia", "Post");
+      return '<li class="' + (k === "fmp" ? "fmp" : "") + (k === cur ? " on" : "") + '"><i></i><span>' + esc(t) + "</span></li>";
+    }).join("") + "</ol>";
+  }
+  function guideHTML() {
+    return '<div class="etguide">' + Object.keys(EST).map(function (k, i) { return (i === 2 ? '<p><b>Última regla (menopausia).</b> Se confirma cuando pasan 12 meses sin regla.</p>' : "") + "<p><b>" + EST[k].t + ".</b> " + EST[k].d + "</p>"; }).join("") + "</div>";
+  }
+
+  // ---- página dentro de «Mi ciclo» ----
+  function page(o) {
+    var box = document.createElement("div"); box.className = "etpage"; box.hidden = true;
+    var id = o.client && o.client.id; if (!id || !o.sb) return box;
+    function fill(c) {
+      var s = state(c.et, c.ent), et = c.et || {}, p = propose(c.ciclo, c.ent, et), h = "", age = +c.ent.edad || 0;
+      if (p && (!s || s.tipo === "menopausia") && (!s || s.estadio !== p.estadio) && !(et.no || {})[p.estadio]) {
+        h += '<div class="etprop"><b>¿Puede que estés en la ' + esc(EST[p.estadio].t.toLowerCase()) + "?</b><span>" + esc(p.why) + " " + esc(EST[p.estadio].d) + '</span><div class="etrow"><button type="button" class="btn primary small" data-yes>Sí, me encaja</button><button type="button" class="btn ghost small" data-no>No es mi caso</button></div></div>';
+      }
+      if (s) {
+        h += '<div class="ethead"><h2>' + esc(title(s)) + '</h2><button type="button" class="btn ghost small" data-edit>Cambiar</button></div>';
+        if (s.tipo === "menopausia") { h += timelineHTML(s.estadio); if (s.estadio) h += '<p class="etsub">' + esc(EST[s.estadio].d) + "</p>"; else h += '<p class="etsub">Elige tu etapa en «Cambiar» para ver lo que te toca ahora.</p>'; }
+        h += sectionsHTML(s, et);
+        if (s.tipo === "menopausia") h += '<details class="etmore"><summary>Ver todas las etapas</summary>' + guideHTML() + "</details>";
+      } else {
+        if (age >= 40) h += '<details class="etmore"><summary>Las etapas de la menopausia</summary>' + timelineHTML(null) + guideHTML() + '<p class="etsrc">Si notas que tus reglas cambian, la app te lo propondrá. Fuente: <a href="https://doi.org/' + SRC.straw[1] + '" target="_blank" rel="noopener">' + esc(SRC.straw[0]) + "</a></p></details>";
+        h += '<button type="button" class="btn ghost small" data-edit>¿Embarazo, posparto o menopausia? Márcalo aquí</button>';
+      }
+      box.innerHTML = h; box.hidden = !h;
+      var q = function (sel) { return box.querySelector(sel); };
+      if (q("[data-edit]")) q("[data-edit]").onclick = function () { open(o, c, fill); };
+      function put(nx, msg) { save(o.sb, id, nx).then(function (cc) { c.et = cc.et; c.ciclo = cc.ciclo; if (o.flash) o.flash(msg); fill(c); if (o.onChange) o.onChange(); }, function () { if (o.flash) o.flash("No se ha guardado. Revisa la conexión."); }); }
+      if (q("[data-yes]")) q("[data-yes]").onclick = function () { put(Object.assign({}, et, { tipo: "menopausia", estadio: p.estadio, meno: p.estadio.slice(0, 4), fecha: TODAY, propuesta: TODAY }), "Guardado: " + EST[p.estadio].t); };
+      if (q("[data-no]")) q("[data-no]").onclick = function () { var no = Object.assign({}, et.no || {}); no[p.estadio] = TODAY; put(Object.assign({}, et, { no: no }), "Vale, no te lo volvemos a proponer"); };
+    }
+    load(o.sb, id).then(fill, function () {});
+    return box;
+  }
+
   // ---- ventana con todo ----
   function open(o, c, refill) {
     var et = Object.assign({}, c.et || {}), s0 = state(c.et, c.ent);
@@ -176,30 +278,27 @@
         h += '<div class="etchips">' + [["cesarea", "Fue por cesárea"], ["lactancia", "Doy el pecho"]].map(function (x) { return '<button type="button" aria-pressed="' + !!et[x[0]] + '" class="' + (et[x[0]] ? "on" : "") + '" data-b="' + x[0] + '">' + (et[x[0]] ? "✓ " : "") + x[1] + "</button>"; }).join("") + "</div>";
       }
       if (et.tipo === "menopausia") {
-        h += '<div class="etchips">' + [["peri", "Aún tengo alguna regla"], ["post", "Más de 12 meses sin regla"]].map(function (x) { return '<button type="button" aria-pressed="' + (et.meno === x[0]) + '" class="' + (et.meno === x[0] ? "on" : "") + '" data-m="' + x[0] + '">' + (et.meno === x[0] ? "✓ " : "") + x[1] + "</button>"; }).join("") + "</div>";
+        h += '<p class="etsub">¿En qué etapa estás?</p><div class="etstages">' + Object.keys(EST).map(function (k) { var on = et.estadio === k; return '<button type="button" aria-pressed="' + on + '" class="' + (on ? "on" : "") + '" data-e="' + k + '"><b>' + (on ? "✓ " : "") + EST[k].t + "</b><span>" + EST[k].d + "</span></button>"; }).join("") + "</div>";
+        h += '<label class="etf">Tu última regla (aproximada)<input type="date" data-k="ultima" max="' + TODAY + '" value="' + esc(et.ultima || "") + '"></label>';
         h += '<p class="etsub">¿Qué notas últimamente?</p><div class="etchips">' + SINT.map(function (x) { var on = (et.sint || []).indexOf(x[0]) >= 0; return '<button type="button" aria-pressed="' + on + '" class="' + (on ? "on" : "") + '" data-s="' + x[0] + '">' + (on ? "✓ " : "") + x[1] + "</button>"; }).join("") + "</div>";
       }
       h += '<button type="button" class="btn primary wide etsave">Guardar</button></div>';
-      if (s) {
-        var k = content(s);
-        h += '<section class="etsec"><h3>🏋️ En tu entreno</h3><ul>' + k.T.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></section>";
-        if (s.tipo === "menopausia" && (et.sint || []).length) h += '<section class="etsec"><h3>Por cómo estás</h3><ul>' + et.sint.map(function (x) { return "<li>" + esc(SADV[x]) + "</li>"; }).join("") + "</ul></section>";
-        h += '<section class="etsec"><h3>🍽️ En tu plato</h3><ul>' + k.P.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></section>";
-        h += '<section class="etsec etstop"><h3>🛑 Para y avisa' + (s.tipo === "menopausia" ? "" : " a tu médico o matrona") + " si…</h3><ul>" + k.A.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></section>";
-        h += '<p class="etsrc">Pautas generales: no sustituyen a tu médico, matrona o fisio. Fuentes: ' + k.src.map(function (x) { return '<a href="https://doi.org/' + x[1] + '" target="_blank" rel="noopener">' + esc(x[0]) + "</a>"; }).join(" · ") + "</p>";
-      } else h += '<p class="etsrc">Sin etapa marcada: no se mostrará nada en tu entreno.</p>';
+      if (s) h += sectionsHTML(s, et);
+      else h += '<p class="etsrc">Sin etapa marcada: no se mostrará nada en tu entreno.</p>';
       pane.innerHTML = h;
       pane.querySelector(".etx").onclick = close;
       Array.prototype.forEach.call(pane.querySelectorAll("[data-t]"), function (b) { b.onclick = function () { et.tipo = b.dataset.t; render(); }; });
-      Array.prototype.forEach.call(pane.querySelectorAll("[data-k]"), function (i) { i.onchange = function () { et[i.dataset.k] = i.value || null; render(); }; });
+      Array.prototype.forEach.call(pane.querySelectorAll("[data-k]"), function (i) { i.onchange = function () { et[i.dataset.k] = i.value || null; if (i.dataset.k === "ultima" && i.value && diffD(i.value, TODAY) >= 365) et.estadio = postStage(i.value); render(); }; });
+      Array.prototype.forEach.call(pane.querySelectorAll("[data-e]"), function (b) { b.onclick = function () { et.estadio = et.estadio === b.dataset.e ? null : b.dataset.e; render(); }; });
       Array.prototype.forEach.call(pane.querySelectorAll("[data-b]"), function (b) { b.onclick = function () { et[b.dataset.b] = !et[b.dataset.b]; render(); }; });
       Array.prototype.forEach.call(pane.querySelectorAll("[data-m]"), function (b) { b.onclick = function () { et.meno = et.meno === b.dataset.m ? null : b.dataset.m; render(); }; });
       Array.prototype.forEach.call(pane.querySelectorAll("[data-s]"), function (b) { b.onclick = function () { var a = (et.sint || []).slice(), i = a.indexOf(b.dataset.s); if (i >= 0) a.splice(i, 1); else a.push(b.dataset.s); et.sint = a; render(); }; });
       var sv = pane.querySelector(".etsave");
       sv.onclick = function () {
         sv.disabled = true; sv.textContent = "Guardando…";
+        if (et.tipo === "menopausia" && et.estadio) et.meno = et.estadio.slice(0, 4);
         save(o.sb, o.client.id, Object.assign({}, et, { fecha: TODAY })).then(function (cc) {
-          c.et = cc.et; if (o.flash) o.flash("Guardado"); refill(c); close();
+          c.et = cc.et; c.ciclo = cc.ciclo; if (o.flash) o.flash("Guardado"); close(); refill(c); if (o.onChange) o.onChange();
         }, function (e) { sv.disabled = false; sv.textContent = "Guardar"; if (o.flash) o.flash(/fetch|network/i.test((e && e.message) || "") ? "Sin conexión: no se ha guardado." : "No se ha guardado: " + ((e && e.message) || "error")); });
       };
     }
@@ -207,5 +306,5 @@
     document.body.appendChild(ov); document.body.style.overflow = "hidden";
     var x = pane.querySelector(".etx"); if (x) x.focus();
   }
-  window.EYLEtapa = { banner: banner, label: label, state: state, content: content };
+  window.EYLEtapa = { banner: banner, label: label, state: state, content: content, page: page, propose: propose };
 })();
