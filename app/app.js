@@ -761,7 +761,7 @@
       function upd(k) { return function (v) { S[k] = v; save(); }; }
       row.appendChild(el("div", { class: "sethead" }, [
         el("span", { class: "sn", text: setLabel(ex, si) }),
-        s.r ? el("span", { class: "obj" }, [el("b", { text: s.r }), " reps"]) : null,
+        s.r ? el("span", { class: "obj" }, [el("b", { text: s.r }), /^[\d\s\-–]+$/.test(String(s.r)) ? " reps" : ""]) : null, // «20 s» o «4 × 20 s» no son reps
         el("span", { class: "rest", text: s.d ? "Descanso " + s.d : "" })
       ]));
       var P = prevSet(ex, si);
@@ -1178,7 +1178,9 @@
     function txt(v, on, ph, type) { var e = el("input", { type: type || "text", value: v || "", placeholder: ph || "" }); e.addEventListener("input", function () { on(e.value); ST.dirty = true; }); return e; }
     var c = el("section", { class: "card edit" });
     c.appendChild(el("div", { class: "cardhead" }, [el("span", { class: "idx", text: String(i + 1) }), field("Ejercicio", txt(ex.n, function (v) { ex.n = v; }), "grow")]));
-    c.appendChild(field("Notas técnicas", txt(ex.nota, function (v) { ex.nota = v; }, "Notas técnicas"), "block"));
+    var notaTa = el("textarea", { rows: "3", placeholder: "Notas técnicas" }); notaTa.value = ex.nota || ""; // textarea: conserva los saltos de línea (listas como la del circuito)
+    notaTa.addEventListener("input", function () { ex.nota = notaTa.value; ST.dirty = true; });
+    c.appendChild(field("Notas técnicas", notaTa, "block"));
     c.appendChild(field("Enlace a vídeo", txt(ex.link, function (v) { ex.link = v; }, "https://… (opcional)", "url"), "block"));
     var uni = el("input", { type: "checkbox", onchange: function () { ex.uni = uni.checked; ST.dirty = true; } }); uni.checked = !!ex.uni;
     c.appendChild(el("label", { class: "check" }, [uni, el("span", { text: "Unilateral (el cliente elige brazo/pierna y lado)" })]));
