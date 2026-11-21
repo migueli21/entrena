@@ -132,15 +132,19 @@
 
   /* Bloque «Cómo se hace»: abierto la primera vez que el cliente ve ese ejercicio; después, plegado. */
   function block(ex, who) {
-    var c = find(ex && ex.n);
-    if (!c) return null;
-    var seenK = "eyl-como-" + (who || "x"), seen = lsGet(seenK, {});
-    var det = h("details", { class: "como" }, [
-      h("summary", {}, [h("span", { class: "comoi", "aria-hidden": "true", text: "ℹ️" }), h("span", { text: "Cómo se hace" })]),
-      h("ol", { class: "comolist" }, c.p.map(function (t) { return h("li", { text: t }); })),
-      c.v ? h("video", { class: "comovid", src: c.v, muted: "", loop: "", playsinline: "", autoplay: "", preload: "none" }) : null
-    ]);
-    if (!seen[c.id]) { det.open = true; seen[c.id] = 1; lsSet(seenK, seen); }
+    // «A + B» (superserie o contraste): una ficha por cada ejercicio, con su título
+    var parts = String((ex && ex.n) || "").split(/\s\+\s/), cs = [];
+    parts.forEach(function (p) { var c = find(p); if (c && cs.indexOf(c) < 0) cs.push(c); });
+    if (!cs.length) return null;
+    var multi = parts.length > 1, kids = [h("summary", {}, [h("span", { class: "comoi", "aria-hidden": "true", text: "ℹ️" }), h("span", { text: "Cómo se hace" })])];
+    cs.forEach(function (c) {
+      if (multi) kids.push(h("p", { class: "comosub", text: c.t }));
+      kids.push(h("ol", { class: "comolist" }, c.p.map(function (t) { return h("li", { text: t }); })));
+      if (c.v) kids.push(h("video", { class: "comovid", src: c.v, muted: "", loop: "", playsinline: "", autoplay: "", preload: "none" }));
+    });
+    var det = h("details", { class: "como" }, kids);
+    var seenK = "eyl-como-" + (who || "x"), seen = lsGet(seenK, {}), key = cs.map(function (c) { return c.id; }).join("+");
+    if (!seen[key]) { det.open = true; seen[key] = 1; lsSet(seenK, seen); }
     return det;
   }
 

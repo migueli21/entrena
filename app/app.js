@@ -762,7 +762,7 @@
       row.appendChild(el("div", { class: "sethead" }, [
         el("span", { class: "sn", text: setLabel(ex, si) }),
         s.r ? el("span", { class: "obj" }, [el("b", { text: s.r }), /^[\d\s\-–]+$/.test(String(s.r)) ? " reps" : ""]) : null, // «20 s» o «4 × 20 s» no son reps
-        el("span", { class: "rest", text: s.d ? "Descanso " + s.d : "" })
+        el("span", { class: "rest", text: s.d && !ex.simple ? "Descanso " + s.d : "" })
       ]));
       var P = prevSet(ex, si);
       if (ex.uni) row.appendChild(el("div", { class: "grid2" }, [
@@ -780,6 +780,10 @@
           if (ex.uni) { if (P.lim && !S.lim) S.lim = P.lim; if (P.lado && !S.lado) S.lado = P.lado; }
           save(); if (ex.uni) render();
         } }, [el("span", { text: txt }), el("b", { text: "Usar" })]));
+      }
+      if (ex.simple) { // potencia, saltos, circuito: solo reps y kilos (sin RIR, fatiga, técnica ni descanso por serie)
+        row.appendChild(el("div", { class: "grid2 last" }, [field("Reps", reps), field("Kg", kg)]));
+        body.appendChild(row); return;
       }
       row.appendChild(el("div", { class: "grid4" }, [
         field("Reps", reps), field("Kg", kg),

@@ -266,3 +266,5 @@ button.prevhint{cursor:pointer;min-height:40px}
 .mast small{color:var(--muted);font-size:14px}
 .masitem .chev{font-size:26px;color:var(--muted)}
 .masback{margin:0 0 8px}
+
+.como .comosub{margin:8px 0 2px;font-weight:700;font-size:14px;color:var(--fg)}
