@@ -280,3 +280,11 @@ button.prevhint{cursor:pointer;min-height:40px}
 .avisoresp{margin:0;padding:8px 10px;border-radius:8px;background:var(--surface2);font-size:14px}
 .avisobtns{display:flex;gap:8px;flex-wrap:wrap}
 .avisobtns .btn{flex:1 1 140px}
+.preplist.mov li{display:block}
+.movrow{display:flex;align-items:center;gap:8px}
+.movrow span{flex:1}
+.movplay{border:1px solid var(--line);background:none;color:var(--accent);border-radius:999px;padding:4px 10px;font-size:12.5px;min-height:32px;white-space:nowrap;cursor:pointer}
+.movvid{margin:6px 0 4px}
+.movvid video{width:100%;max-width:240px;border-radius:12px;display:block;background:#000}
+.movmas{margin:4px 0 8px}
+.movmas summary{cursor:pointer;font-size:13.5px;color:var(--accent);min-height:40px;display:flex;align-items:center}

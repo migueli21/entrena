@@ -916,11 +916,14 @@
         apr,
         el("p", { class: "meta", text: "En los siguientes ejercicios del mismo grupo, basta con 1 serie ligera. Las aproximaciones no se apuntan: las series de la pauta empiezan después." })
       ]),
-      block("mov", "🧘 Movilidad · 8-10 min, en casa o en el gimnasio", [
-        el("p", { class: "prepkey", text: "Es parte de tu plan, no un extra. Hazla antes de entrenar o en casa los días de descanso." }),
-        mov,
-        el("p", { class: "meta", text: "Sin dolor y sin forzar: busca moverte mejor, no llegar más lejos." })
-      ])
+      (function () {
+        var R = window.EYLMov && d ? window.EYLMov.render(d.ej || []) : null;
+        return block("mov", R ? "🧘 Movilidad · " + R.n + " ejercicios, unos 8 min" : "🧘 Movilidad · 8-10 min, en casa o en el gimnasio", [
+          el("p", { class: "prepkey", text: "Es parte de tu plan, no un extra. Hazla antes de entrenar o en casa los días de descanso." })
+        ].concat(R ? R.nodes : [mov]).concat([
+          el("p", { class: "meta", text: "Sin dolor y sin forzar: busca moverte mejor, no llegar más lejos." })
+        ]));
+      })()
     ]);
   }
   function sessionBlock() {
