@@ -371,7 +371,8 @@
     if (UI.d >= w.dias.length) UI.d = 0; return w.dias[UI.d] || { nombre: "", ej: [] };
   }
   // Lo no pautado va en el registro del cliente, no en el plan: L.extra (ejercicios) y días 100+ (entrenos sueltos)
-  function dayEx(d) { var L = ST.LOG[logKey()]; return d.ej.concat((L && L.extra) || []); }
+  function dayEx(d) { var L = ST.LOG[logKey()]; return d.ej.filter(function (e) { return !e.act; }).concat((L && L.extra) || []); } // la activación va en «Antes de empezar»
+  function dayAct(d) { return (d.ej || []).filter(function (e) { return e.act; }); }
   function extraDays(w) {
     return Object.keys(ST.LOG).map(function (k) { var p = k.split("-"); return { w: +p[0], d: +p[1], L: ST.LOG[k] }; })
       .filter(function (x) { return x.w === w && x.d >= 100 && !x.L.borrado; }).sort(function (a, b) { return a.d - b.d; });
@@ -451,7 +452,7 @@
       if (!ST.editing && list.length && !d.libre && UI.d < 100) main.appendChild(briefCard(d));
       if (!ST.editing && ST.mode !== "entrenador" && !ST.readOnly && window.EYLHoy && api.sb) main.appendChild(window.EYLHoy.card({ sb: api.sb, client: ST.client, flash: flash,
         go: function (view, k) { UI.view = view; UI.sgTab = k === "checkin" ? "checkin" : null; render(); window.scrollTo(0, 0); } }));
-      if (!ST.editing && list.length) main.appendChild(prepCard());
+      if (!ST.editing && (list.length || dayAct(d).length)) main.appendChild(prepCard(d));
       if (!list.length && !ST.editing && !d.libre) main.appendChild(el("p", { class: "empty", text: "Hoy no tienes entreno pautado. Descansa o sal a caminar un rato." }));
       list.forEach(function (ex, i) { main.appendChild(ST.editing ? editCard(ex, i, d) : card(ex, i)); });
       if (!ST.editing && !ST.readOnly && !ST.coachWrite) main.appendChild(addExtraBlock());
@@ -657,10 +658,12 @@
       if (r < x.rg[1]) allTop = false; if (r < x.rg[0]) anyLow = true;
       min = Math.min(min, x.rg[0]); max = Math.max(max, x.rg[1]);
     });
-    if (allTop && kg) { var nk = kg + stepKg(kg, ex, kgs); return { p: 1, t: "⬆️ " + ex.n + ": sube de " + kgTxt(kg) + " a " + kgTxt(nk) + " kg y vuelve a " + min + " reps." }; }
-    if (allTop) return { p: 1, t: "⬆️ " + ex.n + ": llegaste arriba del rango; añade dificultad (más peso o más lento)." };
-    if (anyLow) return { p: 3, t: "➡️ " + ex.n + ": mantén " + (kg ? kgTxt(kg) + " kg" : "el peso") + " y busca llegar a " + min + " reps en todas las series." };
-    return { p: 2, t: "➕ " + ex.n + ": mismo peso" + (kg ? " (" + kgTxt(kg) + " kg)" : "") + ", intenta 1 rep más por serie (hasta " + max + ")." };
+    // s = el objetivo en corto (sale dentro del ejercicio); t = con el nombre (sale en «Lo importante de hoy»)
+    function out(p, ico, s) { return { p: p, ico: ico, s: s, t: ico + " " + ex.n + ": " + s }; }
+    if (allTop && kg) { var nk = kg + stepKg(kg, ex, kgs); return out(1, "⬆️", "sube de " + kgTxt(kg) + " a " + kgTxt(nk) + " kg y vuelve a " + min + " reps."); }
+    if (allTop) return out(1, "⬆️", "llegaste arriba del rango; añade dificultad (más peso o más lento).");
+    if (anyLow) return out(3, "➡️", "mantén " + (kg ? kgTxt(kg) + " kg" : "el peso") + " y busca llegar a " + min + " reps en todas las series.");
+    return out(2, "➕", "mismo peso" + (kg ? " (" + kgTxt(kg) + " kg)" : "") + ", intenta 1 rep más por serie (hasta " + max + ").");
   }
   function briefItems(d) {
     var out = [], rir = null;
@@ -737,6 +740,14 @@
     }
     var sum = el("p", { class: "foldsum", text: foldSummary(ex) });
     var vd = el("p", { class: "verdict", hidden: true });
+    var goal = null; // objetivo de hoy en el propio ejercicio (el mismo que en «Lo importante de hoy»)
+    if (!ex.extra && !ex.simple) {
+      var dd0 = day(), gtxt = null;
+      if (isDeload(dd0)) gtxt = "🔋 Semana de descarga: mismo peso o algo menos y más reps en recámara.";
+      else { var sg = suggestion(ex); if (sg) gtxt = sg.ico + " Hoy: " + sg.s;
+        else { var rg0 = ex.series[0] && repRange(ex.series[0].r); if (rg0) gtxt = "🆕 Hoy: elige un peso con el que hagas " + (rg0[0] === rg0[1] ? rg0[0] : rg0[0] + "-" + rg0[1]) + " reps con el RIR de la nota."; } }
+      if (gtxt) goal = el("p", { class: "exgoal", text: gtxt });
+    }
     function refreshV() { var v = verdict(ex); vd.className = "verdict" + (v ? " " + v.c : ""); vd.textContent = v ? v.t : ""; vd.hidden = !v; }
     var head = el("div", { class: "cardhead foldable", role: "button", tabindex: "0", "aria-expanded": String(!folded), onclick: toggle,
       onkeydown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } } }, [
@@ -744,7 +755,7 @@
       el("div", { class: "titles" }, [
         el("h2", { text: ex.n }),
         el("p", { class: "meta", text: (ex.extra ? "No pautado · " : "") + seriesText(ex) + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") }),
-        sum, vd
+        goal, sum, vd
       ]),
       el("span", { class: "chev", "aria-hidden": "true", text: "▾" })
     ]);
@@ -864,7 +875,7 @@
     ["Deslizamientos en la pared (wall slides)", "10"],
     ["Puente de glúteo", "10"]
   ];
-  function prepCard() {
+  function prepCard(d) {
     function block(key, title, kids) {
       var stored = lsGet("eyl-prep-" + key, null);
       var det = el("details", { class: "prepblock" }, [el("summary", null, [el("span", { text: title })])].concat(kids));
@@ -878,8 +889,22 @@
       el("li", null, [el("span", { text: "Serie 2 con el 70 %" }), el("b", { text: "× 5" })]),
       el("li", null, [el("span", { text: "Serie 3 con el 85 % (solo en los pesados: hip thrust, prensa, press, peso muerto…)" }), el("b", { text: "× 2-3" })])
     ]);
+    var acts = d ? dayAct(d) : [];
+    function dosis(ex) {
+      var k = (ex.series || []).length, r = ex.series && ex.series[0] ? ex.series[0].r : "";
+      if (ex.uni) k = Math.ceil(k / 2);
+      return (k > 1 ? k + " × " : "") + (r || "") + (ex.uni && !/lado/.test(r) ? " por lado" : "");
+    }
+    var actBlock = acts.length ? block("act", "🎯 Activación · antes de entrenar", [
+      el("p", { class: "prepkey", text: "Prepara el cuerpo para lo de hoy. Suave y con control: no se apunta." }),
+      el("ol", { class: "preplist act" }, acts.map(function (ex) {
+        var nm = String(ex.n || "").replace(/^activaci[oó]n:\s*/i, "");
+        return el("li", null, [el("span", null, [el("span", { text: nm }), ex.nota ? el("small", { class: "actnota", text: ex.nota.replace(/^(RIR[^.]*\.|Descarga[^.]*\.)\s*/i, "") }) : null]), el("b", { text: dosis(ex) })]);
+      }))
+    ]) : null;
     return el("section", { class: "card prep", "aria-label": "Antes de empezar" }, [
       el("h2", { text: "Antes de empezar" }),
+      actBlock,
       block("apr", "🔥 Series de aproximación: no empieces en frío", [
         el("p", { class: "prepkey", text: "Sirven para calentar y preparar el movimiento, no para cansarte. Tienen que ser fáciles: si te fatigan, te quitan fuerza para las series buenas." }),
         el("p", { class: "meta", text: "En el primer ejercicio de cada grupo muscular, antes de tus series:" }),
@@ -1065,6 +1090,7 @@
     base.dias.forEach(function (d0, di) {
       main.appendChild(el("h3", { class: "dayhead", text: "Día " + (di + 1) + (d0.nombre ? " · " + d0.nombre : "") }));
       d0.ej.forEach(function (ex0) {
+        if (ex0.act) return; // la activación no se apunta
         var rows = [], tons = [];
         for (var w = 0; w < nW; w++) {
           var dd = ST.PLAN.semanas[w].dias[di];
@@ -1188,6 +1214,8 @@
     c.appendChild(field("Enlace a vídeo", txt(ex.link, function (v) { ex.link = v; }, "https://… (opcional)", "url"), "block"));
     var uni = el("input", { type: "checkbox", onchange: function () { ex.uni = uni.checked; ST.dirty = true; } }); uni.checked = !!ex.uni;
     c.appendChild(el("label", { class: "check" }, [uni, el("span", { text: "Unilateral (el cliente elige brazo/pierna y lado)" })]));
+    var act = el("input", { type: "checkbox", onchange: function () { ex.act = act.checked; ST.dirty = true; } }); act.checked = !!ex.act;
+    c.appendChild(el("label", { class: "check" }, [act, el("span", { text: "Activación (sale en «Antes de empezar» y no se apunta)" })]));
     var gwrap = el("div", { class: "gchips", role: "group", "aria-label": "Grupo muscular" });
     GROUPS.forEach(function (g) {
       var on = (ex.g || []).indexOf(g) >= 0;
