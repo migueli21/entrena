@@ -54,7 +54,9 @@
     return { D: D, flags: flags };
   }
   // elige los ejercicios del día
-  function pick(list) {
+  // excl: id de ejercicios que ese cliente no debe hacer (planes.data.movNo), p. ej. ["estt"]
+  function pick(list, excl) {
+    var no = {}; (excl || []).forEach(function (id) { no[id] = true; });
     var r = demand(list), D = r.D, tot = D.H + D.C + D.T, slots = TOTAL - 1, n = {};
     if (!tot) { n = { H: 2, C: 2, T: 1 }; }
     else {
@@ -62,11 +64,11 @@
       zs.forEach(function (z) { n[z] = D[z] / tot >= 0.15 ? 1 : 0; rest -= n[z]; });
       while (rest > 0) { // reparte el resto según la demanda que queda sin cubrir
         var best = null, bv = -1;
-        zs.forEach(function (z) { var v = D[z] / (n[z] + 1); if (v > bv && n[z] < PRI[z].length) { bv = v; best = z; } });
+        zs.forEach(function (z) { var v = D[z] / (n[z] + 1); if (v > bv && n[z] < PRI[z].filter(function (id) { return !no[id]; }).length) { bv = v; best = z; } });
         if (!best) break; n[best]++; rest--;
       }
     }
-    var chosen = { gato: true }, pri = { H: PRI.H.slice(), C: PRI.C.slice(), T: PRI.T.slice() };
+    var chosen = no.gato ? {} : { gato: true }, ok = function (id) { return !no[id]; }, pri = { H: PRI.H.filter(ok), C: PRI.C.filter(ok), T: PRI.T.filter(ok) };
     if (r.flags.aduc) pri.C = ["estl"].concat(pri.C.filter(function (x) { return x !== "estl"; }));
     ["T", "H", "C"].forEach(function (z) {
       var c = 0; pri[z].forEach(function (id) { if (c < n[z] && !chosen[id]) { chosen[id] = true; c++; } });
@@ -76,7 +78,7 @@
     if (D.H && D.H / (tot || 1) >= 0.3) foco.push("hombro y torácica");
     if (D.C && D.C / (tot || 1) >= 0.3) foco.push("cadera");
     if (D.T && D.T / (tot || 1) >= 0.25) foco.push("rodilla y tobillo");
-    return { sel: sel, resto: CAT.filter(function (m) { return !chosen[m.id]; }), foco: foco, demanda: D };
+    return { sel: sel, resto: CAT.filter(function (m) { return !chosen[m.id] && !no[m.id]; }), foco: foco, demanda: D };
   }
 
   function h(tag, attrs, kids) {
@@ -102,8 +104,8 @@
     return h("li", null, [h("div", { class: "movrow" }, [h("span", { text: m.n }), h("b", { text: m.d }), btn]), box]);
   }
   // bloque para «Antes de empezar»
-  function render(list) {
-    var p = pick(list);
+  function render(list, excl) {
+    var p = pick(list, excl);
     var kids = [
       h("p", { class: "meta", text: p.foco.length ? "Hoy, según tu sesión: " + p.foco.join(", ") + "." : "Movilidad general para hoy." }),
       h("ol", { class: "preplist mov" }, p.sel.map(item))
