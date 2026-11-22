@@ -449,6 +449,11 @@
       if (d.libre && !ST.editing) main.appendChild(extraHead());
       if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = ST.cicloTab ? "ciclo" : "nutri"; render(); window.scrollTo(0, 0); } }));
       if (!ST.editing && window.EYLEtapa && api.sb) main.appendChild(window.EYLEtapa.banner({ sb: api.sb, client: ST.client, coach: ST.mode === "entrenador", flash: flash }));
+      if (!ST.editing && window.EYLAviso && api.sb) { // aviso del entrenador: el cliente lo lee arriba; el entrenador lo escribe aquí
+        if (ST.mode === "entrenador" && !ST.coachWrite) main.appendChild(window.EYLAviso.coachCard({ sb: api.sb, client: ST.client, plan: ST.PLAN, flash: flash,
+          save: function () { return api.savePlan(ST.clientId, ST.PLAN); }, rerender: render }));
+        else if (ST.mode !== "entrenador") main.appendChild(window.EYLAviso.clientCard({ sb: api.sb, client: ST.client, plan: ST.PLAN, flash: flash, coachName: CFG.ENTRENADOR }));
+      }
       if (!ST.editing && list.length && !d.libre && UI.d < 100) main.appendChild(briefCard(d));
       if (!ST.editing && ST.mode !== "entrenador" && !ST.readOnly && window.EYLHoy && api.sb) main.appendChild(window.EYLHoy.card({ sb: api.sb, client: ST.client, flash: flash,
         go: function (view, k) { UI.view = view; UI.sgTab = k === "checkin" ? "checkin" : null; render(); window.scrollTo(0, 0); } }));
