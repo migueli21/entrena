@@ -201,6 +201,7 @@
       r[1].forEach(function (a) { if (!ST.activity[a.cliente_id]) ST.activity[a.cliente_id] = a.updated_at; });
       ST.plans = {}; r[2].forEach(function (p) { ST.plans[p.cliente_id] = p.data; });
       ST.pain = painInfo(r[3] || [], r[4] || [], r[5] || []);
+      ST.follow = followInfo(r[3] || [], r[5] || []);
       ST.stage = {}; (r[4] || []).forEach(function (x) { var t = window.EYLEtapa && window.EYLEtapa.label(x.etapa, x.e); if (t) ST.stage[x.cliente_id] = t; });
       renderCoachHome();
     }).catch(function (x) { shell([topbar(), el("p", { class: "err", text: errMsg(x) })]); });
@@ -245,6 +246,26 @@
     Object.keys(out).forEach(function (id) { var o = out[id]; o.items.sort(function (a, b) { return (a.lvl === "bad" ? 0 : 1) - (b.lvl === "bad" ? 0 : 1); }); });
     return out;
   }
+  // ---- notas que faltan: entrenos de los últimos 14 días sin nota y semana anterior sin cerrar ----
+  function followInfo(checks, logs) {
+    var out = {}, cur = isoMonday(new Date()), pd = new Date(); pd.setDate(pd.getDate() - 7);
+    var prev = isoMonday(pd), prevEnd = cur, ck = {};
+    checks.forEach(function (r) { ck[r.cliente_id] = r.ck || {}; });
+    logs.forEach(function (r) {
+      var L = r.data || {}; if (L.borrado) return;
+      var sets = Object.keys(L.ej || {}).some(function (k) { return ((L.ej[k] || {}).s || []).some(function (S) { return S && parseFloat(S.reps) > 0; }); });
+      if (!sets && !L.terminado) return;
+      var o = out[r.cliente_id] || (out[r.cliente_id] = { sinNota: 0, prevTrained: false });
+      if (!(L.sesion && L.sesion.sen)) o.sinNota++;
+      var f = L.fecha || (r.updated_at || "").slice(0, 10);
+      if (f >= prev && f < prevEnd) o.prevTrained = true;
+    });
+    Object.keys(out).forEach(function (id) {
+      var c = ck[id] || {}, nx = c[cur];
+      out[id].ciPend = out[id].prevTrained && !c[prev] && !(nx && !nx.sem);
+    });
+    return out;
+  }
   function renderCoachHome() {
     var list = el("div", { class: "clients" });
     var painN = ST.clients.filter(function (c) { return ST.pain && ST.pain[c.id]; }).length;
@@ -257,14 +278,16 @@
         : c.must_change_password ? el("span", { class: "pill", text: "No ha entrado" })
         : days == null ? el("span", { class: "pill", text: "Sin registros" })
         : el("span", { class: "pill" + (days <= 3 ? " go" : days > 7 ? " warn" : ""), text: days === 0 ? "Hoy" : "Hace " + days + " d" });
-      var pain = ST.pain && ST.pain[c.id], stage = ST.stage && ST.stage[c.id];
+      var pain = ST.pain && ST.pain[c.id], stage = ST.stage && ST.stage[c.id], fw = ST.follow && ST.follow[c.id];
       var info = [el("b", { text: c.nombre || c.email }), el("small", { text: c.email + (c.activo ? "" : " · pausado") })];
       if (stage) info.push(el("span", { class: "stagetag", text: stage }));
       if (pain) info.push(el("ul", { class: "painlist" }, pain.items.slice(0, 3).map(function (it) { return el("li", { class: it.lvl, text: it.txt }); })
         .concat(pain.items.length > 3 ? [el("li", { class: "more", text: "+" + (pain.items.length - 3) + " más" })] : [])));
       list.appendChild(el("button", { class: "client" + (pain ? " haspain " + pain.lvl : ""), type: "button", onclick: function () { openClient(c, true); } }, [
         el("div", null, info),
-        el("div", { class: "pills" }, (pain ? [el("span", { class: "pill " + (pain.lvl === "bad" ? "bad" : "warn"), text: pain.lvl === "bad" ? "Dolor" : "Molestias" })] : []).concat([pill]))
+        el("div", { class: "pills" }, (pain ? [el("span", { class: "pill " + (pain.lvl === "bad" ? "bad" : "warn"), text: pain.lvl === "bad" ? "Dolor" : "Molestias" })] : []).concat([pill])
+          .concat(fw && fw.sinNota ? [el("span", { class: "pill warn", text: fw.sinNota + (fw.sinNota === 1 ? " entreno" : " entrenos") + " sin nota" })] : [])
+          .concat(fw && fw.ciPend ? [el("span", { class: "pill warn", text: "Semana sin cerrar" })] : []))
       ]));
     });
     shell([topbar(), el("header", { class: "top" }, [
@@ -307,6 +330,7 @@
         return;
       }
       if (UI.w == null || UI.w >= ST.PLAN.semanas.length) UI.w = currentWeek();
+      if (!asCoach) loadSG();
       render();
     }).catch(function (x) { shell([topbar(), el("p", { class: "err", text: errMsg(x) })]); });
   }
@@ -392,10 +416,14 @@
   var pending = {}, saveTimer;
   function persist() {
     if (ST.readOnly) return;
-    var k = logKey(); ST.LOG[k].editado = Date.now();
+    persistKey(logKey());
+    refreshProgress();
+  }
+  function persistKey(k) {
+    if (ST.readOnly || !ST.LOG[k]) return;
+    ST.LOG[k].editado = Date.now();
     if (ST.coachWrite) ST.LOG[k].porEntrenador = Date.now(); else lsSet(cacheKey(), ST.LOG);
     queueSave(k);
-    refreshProgress();
   }
   function queueSave(k) {
     pending[k] = true;
@@ -446,6 +474,8 @@
         el("span", { text: "Lo que escribas se guarda en su registro y lo verá en su app." })]));
       if (ST.editing) main.appendChild(editDayHead(d));
       else main.appendChild(dateRow());
+      if (!ST.editing && ST.mode !== "entrenador" && !ST.readOnly) { var wr = weekReminder(), nr = noteReminder(); if (wr) main.appendChild(wr); if (nr) main.appendChild(nr); }
+      if (!ST.editing && ST.readOnly && !ST.coachWrite) { var cn = coachNoteCard(); if (cn) main.appendChild(cn); }
       if (d.libre && !ST.editing) main.appendChild(extraHead());
       if (!ST.editing && window.EYLNutri && api.sb) main.appendChild(window.EYLNutri.cycleBanner({ sb: api.sb, client: ST.client, go: ST.mode === "entrenador" ? null : function () { UI.view = ST.cicloTab ? "ciclo" : "nutri"; render(); window.scrollTo(0, 0); } }));
       if (!ST.editing && window.EYLEtapa && api.sb) main.appendChild(window.EYLEtapa.banner({ sb: api.sb, client: ST.client, coach: ST.mode === "entrenador", flash: flash }));
@@ -454,7 +484,7 @@
           save: function () { return api.savePlan(ST.clientId, ST.PLAN); }, rerender: render }));
         else if (ST.mode !== "entrenador") main.appendChild(window.EYLAviso.clientCard({ sb: api.sb, client: ST.client, plan: ST.PLAN, flash: flash, coachName: CFG.ENTRENADOR }));
       }
-      if (!ST.editing && list.length && !d.libre && UI.d < 100) main.appendChild(briefCard(d));
+      if (!ST.editing && list.length && !d.libre && UI.d < 100) { var gc = goalCard(d); if (gc) main.appendChild(gc); main.appendChild(briefCard(d)); }
       if (!ST.editing && ST.mode !== "entrenador" && !ST.readOnly && window.EYLHoy && api.sb) main.appendChild(window.EYLHoy.card({ sb: api.sb, client: ST.client, flash: flash,
         go: function (view, k) { UI.view = view; UI.sgTab = k === "checkin" ? "checkin" : null; render(); window.scrollTo(0, 0); } }));
       if (!ST.editing && (list.length || dayAct(d).length)) main.appendChild(prepCard(d));
@@ -637,10 +667,18 @@
     var pct = prev ? (cur - prev) / prev : 0, plus = function (x, u) { return (x > 0 ? "+" : "") + kgTxt(x) + u; };
     var det = sameKg ? (dr ? plus(dr, dr === 1 || dr === -1 ? " rep" : " reps") + " con el mismo peso" : "mismas reps y mismo peso")
       : plus(dk / n, " kg de media por serie");
-    if (pct > 0.02) return { c: "up", t: "🟢 Mejoras: " + det + "." };
-    if (pct < -0.02) return isDeload(day()) ? { c: "eq", t: "🟡 Semana de descarga: toca ir más suave, es lo previsto." }
-      : { c: "down", t: "🟠 Baja un poco (" + det + "). Revisa descanso, sueño o fatiga; un día flojo es normal." };
-    return { c: "eq", t: "🟡 Te mantienes: mismo rendimiento que la última vez" + (sameKg ? "" : " (" + det + ")") + "." };
+    var tq = E.tq, late = isLate(ex, true), sh = orderShift(ex);
+    if (pct > 0.02) return { c: "up", t: "🟢 Mejoras: " + det + (tq === "mejor" ? " y con mejor técnica" : "") + "." };
+    if (tq === "mejor" && pct >= -0.05) return { c: "up", t: "🟢 Mejoras en técnica" + (pct < -0.02 ? ", aunque bajas un poco (" + det + ")" : ", con el mismo rendimiento") + ". También es progresar." };
+    var tqBad = tq === "peor" ? " Técnica peor que la última vez: mejor algo menos de peso y hacerlo bien." : "";
+    if (pct < -0.02) {
+      if (isDeload(day())) return { c: "eq", t: "🟡 Semana de descarga: toca ir más suave, es lo previsto." };
+      var stLate = starEx(day()) && starEx(day()).id === ex.id && sh >= 1 ? " Es tu ejercicio estrella: hazlo al principio, en fresco." : "";
+      if (late && pct >= -0.05) return { c: "eq", t: "🟡 Baja un poco (" + det + "): " + (sh >= 2 ? "hoy lo hiciste " + sh + " puestos más tarde que la última vez, con más fatiga acumulada." : "normal al final de la sesión, con la fatiga acumulada.") + stLate + tqBad };
+      return { c: "down", t: "🟠 Baja un poco (" + det + ")." + (sh >= 2 ? " Hoy lo hiciste " + sh + " puestos más tarde que la última vez: llegar más cansado resta fuerza." : late ? " Va al final de la sesión: la fatiga acumulada cuenta." : " Revisa descanso, sueño o fatiga; un día flojo es normal.") + stLate + tqBad };
+    }
+    if (late) return { c: "up", t: "🟢 Mantener aquí está bien: va al final de la sesión, con fatiga acumulada" + (sameKg ? "" : " (" + det + ")") + "." + tqBad };
+    return { c: "eq", t: "🟡 Te mantienes: mismo rendimiento que la última vez" + (sameKg ? "" : " (" + det + ")") + "." + tqBad };
   }
   function repRange(r) { var m = String(r || "").match(/(\d+)\s*(?:-|–|a)\s*(\d+)/); if (m) return [+m[1], +m[2]]; m = String(r || "").match(/(\d+)/); return m ? [+m[1], +m[1]] : null; }
   // Subida de peso que exista en el material: si el ejercicio usa pesos de 1,25 en 1,25 (poleas y máquinas: 7,5 · 23,75 · 31,25),
@@ -668,10 +706,13 @@
     if (allTop && kg) { var nk = kg + stepKg(kg, ex, kgs); return out(1, "⬆️", "sube de " + kgTxt(kg) + " a " + kgTxt(nk) + " kg y vuelve a " + min + " reps."); }
     if (allTop) return out(1, "⬆️", "llegaste arriba del rango; añade dificultad (más peso o más lento).");
     if (anyLow) return out(3, "➡️", "mantén " + (kg ? kgTxt(kg) + " kg" : "el peso") + " y busca llegar a " + min + " reps en todas las series.");
+    if (isLate(ex)) return out(2, "➕", "mismo peso" + (kg ? " (" + kgTxt(kg) + " kg)" : "") + ": mejor técnica o 1 rep más. Va al final, con fatiga: mantener ya está bien.");
     return out(2, "➕", "mismo peso" + (kg ? " (" + kgTxt(kg) + " kg)" : "") + ", intenta 1 rep más por serie (hasta " + max + ").");
   }
   function briefItems(d) {
-    var out = [], rir = null;
+    var out = [], rir = null, st = starEx(d);
+    if (d.obj) out.push({ k: "goal", t: "🎯 Objetivo de la sesión: " + d.obj });
+    if (st) out.push({ k: "goal", t: "⭐ Ejercicio estrella: " + st.n + ". Es la prioridad de hoy: dale tu mejor esfuerzo y tu mejor técnica." });
     (d.ej || []).forEach(function (ex) { var m = (ex.nota || "").match(/RIR\s*[0-9]+(?:\s*-\s*[0-9]+)?/i); if (!rir && m) rir = m[0].toUpperCase(); });
     if (isDeload(d)) out.push({ k: "plan", t: "🔋 Semana de descarga: menos series y más reps en recámara. No busques récords." });
     else if (rir) out.push({ k: "plan", t: "🎯 Objetivo de esfuerzo esta semana: " + rir + " (reps que te deberían sobrar al acabar cada serie)." });
@@ -682,7 +723,7 @@
   function briefList(d, cyc, limit) {
     var items = briefItems(d), lis = [];
     if (cyc) lis.push(el("li", { class: "bcyc" }, [el("b", { text: "🌙 Día " + cyc.dia + " del ciclo · " + cyc.label + ". " }), cyc.entreno]));
-    var exs = items.filter(function (x) { return x.k === "ex"; }), plan = items.filter(function (x) { return x.k !== "ex"; });
+    var exs = items.filter(function (x) { return x.k === "ex"; }), plan = items.filter(function (x) { return x.k === "plan" || (x.k === "goal" && limit); }); // en la tarjeta del día, objetivo y estrella ya van arriba
     plan.forEach(function (x) { lis.push(el("li", { text: x.t })); });
     var shown = limit ? exs.slice(0, limit) : exs;
     shown.forEach(function (x) { lis.push(el("li", { text: x.t })); });
@@ -732,7 +773,8 @@
   function card(ex, i) {
     var E = exLog(ex);
     var folded = isFolded(ex);
-    var c = el("section", { class: "card exc" + (folded ? " folded" : "") });
+    var isStar = !ex.extra && starEx(day()) && starEx(day()).id === ex.id;
+    var c = el("section", { class: "card exc" + (folded ? " folded" : "") + (isStar ? " star" : "") });
     function toggle() {
       var v = !c.classList.contains("folded");
       setFolded(ex, v); c.classList.toggle("folded", v);
@@ -753,14 +795,20 @@
         else { var rg0 = ex.series[0] && repRange(ex.series[0].r); if (rg0) gtxt = "🆕 Hoy: elige un peso con el que hagas " + (rg0[0] === rg0[1] ? rg0[0] : rg0[0] + "-" + rg0[1]) + " reps con el RIR de la nota."; } }
       if (gtxt) goal = el("p", { class: "exgoal", text: gtxt });
     }
+    var ordTag = null; // orden real en que lo hizo el cliente (solo lo ve el entrenador)
+    if (ST.readOnly && !ST.coachWrite) {
+      var oi = orderInfo(UI.w, UI.d), rp = oi && oi.pos[ex.id], pp = oi && oi.planPos[ex.id];
+      if (rp) ordTag = el("p", { class: "ordtag" + (pp && rp !== pp ? " moved" : ""), text: "🔢 Hecho " + rp + ".º" + (pp ? (rp !== pp ? " · en el plan va " + pp + ".º" : " · como en el plan") : "") + (oi.fiable ? "" : " · orden poco fiable") });
+    }
     function refreshV() { var v = verdict(ex); vd.className = "verdict" + (v ? " " + v.c : ""); vd.textContent = v ? v.t : ""; vd.hidden = !v; }
     var head = el("div", { class: "cardhead foldable", role: "button", tabindex: "0", "aria-expanded": String(!folded), onclick: toggle,
       onkeydown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } } }, [
       el("span", { class: "idx", text: String(i + 1) }),
       el("div", { class: "titles" }, [
+        isStar ? el("span", { class: "startag", text: "⭐ Ejercicio estrella" }) : null,
         el("h2", { text: ex.n }),
         el("p", { class: "meta", text: (ex.extra ? "No pautado · " : "") + seriesText(ex) + ((ex.g || []).length ? " · " + ex.g.join(", ") : "") + (ex.uni ? " · unilateral: elige brazo o pierna y lado" : "") }),
-        goal, sum, vd
+        ordTag, goal, sum, vd
       ]),
       el("span", { class: "chev", "aria-hidden": "true", text: "▾" })
     ]);
@@ -773,7 +821,7 @@
     ex.series.forEach(function (s, si) {
       var S = setLog(ex, si);
       var row = el("div", { class: "set" + (S.reps ? " filled" : "") });
-      function save() { row.classList.toggle("filled", !!S.reps); persist(); sum.textContent = foldSummary(ex); refreshV(); }
+      function save() { if (S.reps) stamp(E); row.classList.toggle("filled", !!S.reps); persist(); sum.textContent = foldSummary(ex); refreshV(); }
       function upd(k) { return function (v) { S[k] = v; save(); }; }
       row.appendChild(el("div", { class: "sethead" }, [
         el("span", { class: "sn", text: setLabel(ex, si) }),
@@ -815,6 +863,8 @@
       body.appendChild(row);
     });
     refreshV();
+    if (!ex.simple) body.appendChild(el("div", { class: "nq tq" }, [el("span", { class: "nql", text: "Técnica hoy frente a la última vez (opcional)" }),
+      taps([["peor", "👎", "Peor"], ["igual", "➖", "Igual"], ["mejor", "👍", "Mejor"]], E.tq, function (v) { E.tq = v; persist(); refreshV(); }, "aj", "Técnica hoy", ST.readOnly)]));
     var ta = el("textarea", { rows: "2", placeholder: ST.readOnly ? "" : "¿Cómo te ha ido este ejercicio? Molestias, sensaciones…", oninput: function () { E.com = ta.value; persist(); } });
     ta.value = E.com || ""; if (ST.readOnly) ta.disabled = true;
     body.appendChild(field("Comentario del ejercicio", ta, "block"));
@@ -926,25 +976,308 @@
       })()
     ]);
   }
+  // ================= ORDEN REAL, NOTA DEL ENTRENO Y CIERRE DE SEMANA =================
+  // Orden real: hora de la primera serie apuntada de cada ejercicio (E.t1). Si lo apunta el entrenador (E.tc) o se apunta
+  // todo de golpe (3 o más ejercicios en menos de 3 min), el orden se marca como poco fiable.
+  function stamp(E) {
+    if (ST.readOnly) return;
+    var now = Date.now();
+    if (!E.t1) { E.t1 = now; if (ST.coachWrite) E.tc = 1; }
+    E.tN = now;
+  }
+  function orderInfo(w, d) {
+    var L = ST.LOG[w + "-" + d]; if (!L || !L.ej || L.borrado) return null;
+    var dd = ST.PLAN.semanas[w] && ST.PLAN.semanas[w].dias[d];
+    var plan = (dd && d < 100 ? dd.ej.filter(function (e) { return !e.act; }) : []).concat(L.extra || []);
+    var planPos = {}; plan.forEach(function (e, i) { planPos[e.id] = i + 1; });
+    var done = Object.keys(L.ej).filter(function (k) { return L.ej[k] && L.ej[k].t1; })
+      .map(function (k) { return { id: k, t: L.ej[k].t1, tc: L.ej[k].tc }; }).sort(function (a, b) { return a.t - b.t; });
+    if (!done.length) return null;
+    var pos = {}; done.forEach(function (x, i) { pos[x.id] = i + 1; });
+    var span = done[done.length - 1].t - done[0].t;
+    return { pos: pos, planPos: planPos, ids: done.map(function (x) { return x.id; }), span: span,
+      fiable: !done.some(function (x) { return x.tc; }) && !(done.length >= 3 && span < 3 * 6e4) };
+  }
+  function orderShift(ex) { // >0: hoy lo hizo más tarde que la última vez que hizo este día
+    var oi = orderInfo(UI.w, UI.d); if (!oi || !oi.fiable || !oi.pos[ex.id]) return 0;
+    for (var w = UI.w - 1; w >= 0; w--) {
+      var dd = ST.PLAN.semanas[w] && ST.PLAN.semanas[w].dias[UI.d]; if (!dd) continue;
+      var m = dd.ej.filter(function (e) { return e.id === ex.id; })[0] || dd.ej.filter(function (e) { return e.n === ex.n; })[0];
+      var L = ST.LOG[w + "-" + UI.d], E = m && L && L.ej && L.ej[m.id];
+      if (!E || !(E.s || []).some(function (S) { return S && parseFloat(S.reps) > 0; })) continue;
+      var po = orderInfo(w, UI.d); if (!po || !po.fiable || !po.pos[m.id]) return 0;
+      return oi.pos[ex.id] - po.pos[m.id];
+    }
+    return 0;
+  }
+  // ¿Va en la segunda mitad de la sesión? Con el orden real si es fiable (real=true), si no con el del plan. Con menos de 3 ejercicios, nunca.
+  function isLate(ex, real) {
+    var list = dayEx(day()).filter(function (e) { return !e.act; }), n = list.length; if (n < 3) return false;
+    var pos = null, oi = real ? orderInfo(UI.w, UI.d) : null;
+    if (oi && oi.fiable && oi.pos[ex.id]) { pos = oi.pos[ex.id]; n = Math.max(n, oi.ids.length); }
+    else list.forEach(function (e, i) { if (e.id === ex.id) pos = i + 1; });
+    return pos != null && pos > Math.ceil(n / 2);
+  }
+  function starEx(d) { return d && d.star ? (d.ej || []).filter(function (e) { return e.id === d.star && !e.act; })[0] || null : null; }
+  function goalCard(d) { // objetivo de la sesión y ejercicio estrella (los pone el entrenador en «Editar pauta»)
+    var st = starEx(d); if (!d.obj && !st) return null;
+    return el("section", { class: "card sgoal" }, [
+      d.obj ? el("p", { class: "sgobj" }, [el("b", { text: "🎯 Objetivo de hoy" }), el("span", { text: d.obj })]) : null,
+      st ? el("p", { class: "sgstar" }, [el("b", { text: "⭐ Ejercicio estrella" }), el("span", { text: st.n })]) : null
+    ]);
+  }
+  function exName(w, d, id) {
+    var dd = ST.PLAN.semanas[w] && ST.PLAN.semanas[w].dias[d], L = ST.LOG[w + "-" + d];
+    var e = ((dd && d < 100 ? dd.ej : []).concat((L && L.extra) || [])).filter(function (x) { return x.id === id; })[0];
+    return e ? e.n : "Ejercicio";
+  }
+
+  // Nota del entreno: sensaciones (sen 1-5) y «la próxima vez» (ajuste) obligatorias; esfuerzo de la sesión (esf 1-10,
+  // RPE de sesión), duración y comentario, opcionales.
+  var SEN = [[1, "😫", "Muy mal"], [2, "😕", "Mal"], [3, "😐", "Normal"], [4, "🙂", "Bien"], [5, "💪", "Genial"]];
+  var AJ = [["mas", "⬆️", "Puedo apretar más"], ["igual", "👌", "Así está bien"], ["menos", "⬇️", "Necesito aflojar"]];
+  var AJ_SEM = [["mas", "⬆️", "Apretar más"], ["igual", "👌", "Igual"], ["menos", "⬇️", "Aflojar"]];
+  function senTxt(v) { var x = SEN.filter(function (s) { return s[0] === +v; })[0]; return x ? x[1] + " " + x[2] : ""; }
+  function ajTxt(v, list) { var x = (list || AJ).filter(function (s) { return s[0] === v; })[0]; return x ? x[1] + " " + x[2] : ""; }
+  function noteDone(L) { var S = L && L.sesion; return !!(S && S.sen && S.ajuste); }
+  function hasSets(L) { return !!(L && Object.keys(L.ej || {}).some(function (k) { return ((L.ej[k] || {}).s || []).some(function (S) { return S && parseFloat(S.reps) > 0; }); })); }
+  function taps(opts, val, onpick, cls, label, ro) {
+    var box = el("div", { class: "taps " + (cls || ""), role: "group", "aria-label": label });
+    opts.forEach(function (o) {
+      var v = o[0], b = el("button", { type: "button", class: "tap", "aria-pressed": String(val != null && String(val) === String(v)), disabled: ro || null,
+        onclick: function () { Array.prototype.forEach.call(box.children, function (c) { c.setAttribute("aria-pressed", "false"); }); b.setAttribute("aria-pressed", "true"); onpick(v); } },
+        o.length > 2 ? [el("span", { class: "tico", text: o[1] }), el("small", { text: o[2] })] : [String(o[1])]);
+      box.appendChild(b);
+    });
+    return box;
+  }
+  function autoDur(L) { // minutos entre la primera y la última serie apuntadas (solo si el orden es fiable)
+    var ts = Object.keys(L.ej || {}).map(function (k) { return L.ej[k]; }).filter(function (E) { return E && E.t1 && !E.tc; });
+    if (ts.length < 2) return null;
+    var a = Math.min.apply(null, ts.map(function (E) { return E.t1; })), b = Math.max.apply(null, ts.map(function (E) { return E.tN || E.t1; }));
+    var m = Math.round((b - a) / 6e4); return m >= 10 && m <= 240 ? m : null;
+  }
+  function noteFields(L, onChange) {
+    if (!L.sesion) L.sesion = {}; var S = L.sesion, ro = ST.readOnly;
+    function upd(k) { return function (v) { S[k] = v; onChange(); why(); }; }
+    if (!S.dur && !ro) { var ad = autoDur(L); if (ad) S.dur = String(ad); }
+    var dur = el("input", { type: "number", inputmode: "numeric", min: "0", value: S.dur || "", placeholder: "min", disabled: ro || null, oninput: function () { S.dur = dur.value; onChange(); } });
+    var whyLbl = el("span", { text: "Comentario breve (opcional)" });
+    var ta = el("textarea", { rows: "2", disabled: ro || null, placeholder: ro ? "" : "Una frase: qué te ha costado, si has dormido mal, si algo ha molestado…", oninput: function () { S.com = ta.value; onChange(); } });
+    ta.value = S.com || "";
+    function why() {
+      var need = (S.ajuste && S.ajuste !== "igual") || (S.sen && +S.sen <= 2);
+      whyLbl.textContent = need ? (S.ajuste === "mas" ? "¿Qué te ha resultado fácil? (una frase)" : "¿Por qué? Cuéntaselo a " + (CFG.ENTRENADOR || "tu entrenador") + " en una frase") : "Comentario breve (opcional)";
+      whyLbl.parentNode && whyLbl.parentNode.classList.toggle("ask", !!need);
+    }
+    var node = el("div", { class: "notef" }, [
+      el("div", { class: "nq" }, [el("span", { class: "nql", text: "¿Cómo te has sentido?" }), taps(SEN, S.sen, function (v) { upd("sen")(String(v)); }, "sen", "Sensaciones", ro)]),
+      el("div", { class: "nq" }, [el("span", { class: "nql", text: "La próxima vez…" }), taps(AJ, S.ajuste, upd("ajuste"), "aj", "La próxima vez", ro)]),
+      el("div", { class: "nq" }, [el("span", { class: "nql", text: "Esfuerzo de toda la sesión (1 = muy suave, 10 = máximo)" }), taps(range(1, 10).map(function (n) { return [n, n]; }), S.esf, function (v) { upd("esf")(String(v)); }, "esf", "Esfuerzo de la sesión", ro)]),
+      el("div", { class: "grid2" }, [field("Duración (min)", dur), el("span")]),
+      el("label", { class: "field block" }, [whyLbl, ta])
+    ]);
+    why();
+    return node;
+  }
   function sessionBlock() {
-    var L = dayLog(); if (!L.sesion) L.sesion = {}; var S = L.sesion;
-    function upd(k) { return function (v) { S[k] = v; persist(); }; }
-    var dur = input({ type: "number", inputmode: "numeric", min: "0", value: S.dur || "", placeholder: "min", oninput: function () { upd("dur")(dur.value); } });
-    var ta = el("textarea", { rows: "3", placeholder: ST.readOnly ? "" : "Cómo te has sentido, si has dormido mal, si algo ha molestado…", oninput: function () { upd("com")(ta.value); } });
-    ta.value = S.com || ""; if (ST.readOnly) ta.disabled = true;
+    var L = dayLog();
     return el("section", { class: "card session" }, [
-      el("h2", { text: "Al terminar la sesión" }),
-      el("div", { class: "grid3" }, [field("Esfuerzo (1-10)", select(range(1, 10), S.esf, upd("esf"))), field("Duración", dur), field("Sensaciones (1-5)", select(range(1, 5), S.sen, upd("sen")))]),
-      field("Comentario general", ta, "block")
+      el("h2", { text: ST.readOnly ? "Nota del cliente" : "Tu nota del entreno" }),
+      ST.readOnly ? null : el("p", { class: "meta", text: "Dos toques: cómo te has sentido y si podrías apretar más o menos. Así " + (CFG.ENTRENADOR || "tu entrenador") + " sabe cómo ajustar." }),
+      noteFields(L, persist)
     ]);
   }
   function finishBlock() {
-    var L = dayLog();
+    var L = dayLog(), k = logKey();
     var btn = el("button", { class: "btn primary wide", type: "button", text: L.terminado ? "Actualizar entreno" : "Terminar entreno", onclick: function () {
-      L.terminado = Date.now(); persist(); flushSaves(); flash(ST.coachWrite ? "Entreno guardado en el registro de " + (ST.client.nombre || "tu cliente") + "." : "¡Entreno guardado! " + (CFG.ENTRENADOR || "Tu entrenador") + " ya lo puede ver.");
-      render();
+      L.terminado = L.terminado || Date.now(); persist(); flushSaves();
+      if (ST.coachWrite) { render(); flash("Entreno guardado en el registro de " + (ST.client.nombre || "tu cliente") + "."); return; }
+      if (noteDone(L)) { render(); flash("¡Entreno guardado! " + (CFG.ENTRENADOR || "Tu entrenador") + " ya lo puede ver."); weekAfter(k); return; }
+      render(); openNoteSheet(k, function () { weekAfter(k); });
     } });
-    return el("div", { class: "send" }, [btn, el("p", { class: "sent", text: ST.coachWrite ? "Todo se guarda solo mientras escribes. Al terminar, pulsa el botón para marcar el entreno como hecho." : "Todo se guarda solo mientras escribes. Al terminar, pulsa el botón para avisar de que has acabado." })]);
+    return el("div", { class: "send" }, [btn, el("p", { class: "sent", text: ST.coachWrite ? "Todo se guarda solo mientras escribes. Al terminar, pulsa el botón para marcar el entreno como hecho." : "Tus series ya están guardadas. Al terminar, pulsa el botón y deja tu nota del entreno." })]);
+  }
+  function overlay(label, kids) {
+    var ov;
+    function close() { if (ov && ov.parentNode) ov.parentNode.removeChild(ov); document.removeEventListener("keydown", esc); }
+    function esc(e) { if (e.key === "Escape") close(); }
+    ov = el("div", { class: "brief-ov" }, [el("div", { class: "brief-sheet", role: "dialog", "aria-modal": "true", "aria-label": label }, kids(close))]);
+    document.body.appendChild(ov); document.addEventListener("keydown", esc);
+    return close;
+  }
+  function logWhen(k) { var L = ST.LOG[k] || {}; var d = L.fecha ? parseDate(L.fecha) : L.terminado ? new Date(L.terminado) : L.editado ? new Date(L.editado) : null; return d; }
+  function logTitle(k) {
+    var p = k.split("-"), w = +p[0], d = +p[1], L = ST.LOG[k] || {};
+    var nm = d >= 100 ? (L.nombre || "Entreno extra") : ((ST.PLAN.semanas[w] && ST.PLAN.semanas[w].dias[d] && ST.PLAN.semanas[w].dias[d].nombre) || "Día " + (d + 1));
+    var dt = logWhen(k); return nm + (dt ? " · " + fmt(dt) : "");
+  }
+  function openNoteSheet(k, after) {
+    if (document.querySelector(".brief-ov")) return;
+    var L = ST.LOG[k]; if (!L) return;
+    var saveBtn = el("button", { class: "btn primary wide", type: "button", text: "Guardar nota" });
+    var err = el("p", { class: "err" });
+    function chk() { saveBtn.classList.toggle("off", !noteDone(L)); }
+    var fields = noteFields(L, function () { persistKey(k); chk(); err.textContent = ""; });
+    chk();
+    var close = overlay("Nota del entreno", function (close) {
+      saveBtn.onclick = function () {
+        if (!noteDone(L)) { err.textContent = "Marca cómo te has sentido y qué hacemos la próxima vez."; return; }
+        L.sesion.nota = Date.now(); if (!L.terminado) L.terminado = Date.now();
+        persistKey(k); flushSaves(); close();
+        render(); flash("¡Gracias! " + (CFG.ENTRENADOR || "Tu entrenador") + " ya tiene tu nota.");
+        if (after) after();
+      };
+      return [
+        el("p", { class: "bkick", text: logTitle(k) }),
+        el("h2", { text: "¿Qué tal el entreno?" }),
+        el("p", { class: "meta", text: "Tus series ya están guardadas. Esto es para saber si podemos apretar más o menos." }),
+        fields, err, saveBtn,
+        el("button", { class: "btn ghost wide", type: "button", text: "Ahora no", onclick: function () { close(); render(); } })
+      ];
+    });
+  }
+  function pendingNote() { // entreno con series de los últimos 3 días sin nota (o el de hoy, si ya pulsó «Terminar»)
+    var today = parseDate(todayISO()), best = null;
+    Object.keys(ST.LOG).forEach(function (k) {
+      var L = ST.LOG[k]; if (!L || L.borrado || noteDone(L) || !(L.terminado || hasSets(L))) return;
+      var d = logWhen(k); if (!d) return;
+      var age = Math.round((today - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+      if (age < 0 || age > 3 || (age === 0 && !L.terminado)) return;
+      if (!best || d > best.d) best = { k: k, d: d };
+    });
+    return best && best.k;
+  }
+  function noteReminder() {
+    var k = pendingNote(); if (!k) return null;
+    return el("section", { class: "card remind" }, [
+      el("h2", { text: "📝 Te falta la nota del entreno" }),
+      el("p", { class: "meta", text: logTitle(k) + ". Dos toques: cómo te sentiste y si puedes apretar más o menos." }),
+      el("button", { class: "btn primary wide", type: "button", text: "Dejar nota", onclick: function () { openNoteSheet(k); } })
+    ]);
+  }
+  function coachNoteCard() { // arriba del día, en el panel: nota del cliente y orden real
+    var L = ST.LOG[logKey()]; if (!L || L.borrado || !(L.terminado || hasSets(L))) return null;
+    var S = L.sesion || {}, kids = [el("h2", { text: "📝 Nota del cliente" })];
+    if (S.sen || S.ajuste) kids.push(el("p", { class: "cnote", text: [S.sen ? senTxt(S.sen) : null, S.ajuste ? ajTxt(S.ajuste) : null, S.esf ? "Esfuerzo " + S.esf + "/10" : null, S.dur ? S.dur + " min" : null].filter(Boolean).join(" · ") }));
+    else kids.push(el("p", { class: "cnote none", text: "Sin nota: no ha dicho cómo se sintió ni si puede apretar más." }));
+    if (S.com) kids.push(el("p", { class: "note", text: S.com }));
+    var oi = orderInfo(UI.w, UI.d);
+    if (oi) {
+      var moved = oi.ids.filter(function (id) { return oi.planPos[id] && oi.planPos[id] !== oi.pos[id]; }).length;
+      kids.push(el("p", { class: "meta", text: "🔢 Orden real" + (oi.fiable ? "" : " (poco fiable: " + (Object.keys(L.ej).some(function (x) { return L.ej[x].tc; }) ? "lo apuntaste tú" : "lo apuntó todo de golpe") + ")") + (moved ? " · " + moved + " fuera del orden del plan" : " · igual que el plan") + ":" }));
+      kids.push(el("ol", { class: "ordlist" }, oi.ids.map(function (id) {
+        var pp = oi.planPos[id], rp = oi.pos[id];
+        return el("li", { class: pp && pp !== rp ? "moved" : "" }, [exName(UI.w, UI.d, id), pp && pp !== rp ? el("small", { text: " (plan: " + pp + ".º)" }) : null]);
+      })));
+    } else if (hasSets(L)) kids.push(el("p", { class: "meta", text: "🔢 Orden real: sin dato (apuntado antes del 28 nov)." }));
+    return el("section", { class: "card cnotecard" }, kids);
+  }
+
+  // ---- Cierre de semana: el check-in semanal de Control, pedido al acabar la semana del plan o al empezar la siguiente.
+  // Se guarda en seguimiento.data.checkins[lunes de la semana que cierra] con sem = ese lunes (los antiguos no llevan sem).
+  window.EYL_CIERRE = true;
+  function isoD(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function addDays(s, n) { var d = parseDate(s); d.setDate(d.getDate() + n); return isoD(d); }
+  function loadSG() {
+    if (!api.sb || ST.mode === "entrenador" || ST.SGfor === ST.clientId) return;
+    ST.SGfor = ST.clientId; ST.SG = null;
+    api.sb.from("seguimiento").select("data").eq("cliente_id", ST.clientId).maybeSingle().then(function (r) {
+      if (r.error) return; ST.SG = (r.data && r.data.data) || { checkins: {}, tests: [] };
+      if (UI.view === "entreno" && !ST.editing) render();
+    }, function () {});
+  }
+  function sessionsIn(mon) {
+    var end = addDays(mon, 6), n = 0;
+    Object.keys(ST.LOG).forEach(function (k) {
+      var L = ST.LOG[k]; if (!L || L.borrado || !(L.terminado || hasSets(L))) return;
+      var d = logWhen(k); if (!d) return; var s = isoD(d); if (s >= mon && s <= end) n++;
+    });
+    return n;
+  }
+  function weekClosed(mon) {
+    var ck = (ST.SG && ST.SG.checkins) || {}, next = ck[addDays(mon, 7)];
+    return !!(ck[mon] || (next && !next.sem)); // un check-in antiguo hecho la semana siguiente también la cierra
+  }
+  function planWeekDone(w) {
+    var wk = ST.PLAN.semanas[w]; if (!wk) return false;
+    var dias = wk.dias.map(function (d, i) { return i; }).filter(function (i) { return wk.dias[i].ej.some(function (e) { return !e.act; }); });
+    return dias.length > 0 && dias.every(function (i) { var L = ST.LOG[w + "-" + i]; return L && !L.borrado && (L.terminado || noteDone(L)); });
+  }
+  function pendingWeek() {
+    if (!ST.SG || ST.mode === "entrenador") return null;
+    var cur = isoMonday(new Date()), prev = addDays(cur, -7);
+    if (sessionsIn(prev) && !weekClosed(prev)) return prev;
+    if (sessionsIn(cur) && !weekClosed(cur) && planWeekDone(currentWeek())) return cur;
+    return null;
+  }
+  function weekAfter(k) { // tras la nota: si era la última sesión de la semana del plan, se pide cerrar la semana
+    if (!ST.SG) return;
+    var w = +k.split("-")[0]; if (!planWeekDone(w)) return;
+    var d = logWhen(k) || new Date(), mon = isoMonday(d);
+    if (!weekClosed(mon)) setTimeout(function () { openWeekSheet(mon, true); }, 350);
+  }
+  function weekLabel(mon) { var a = parseDate(mon), b = parseDate(addDays(mon, 6)); return fmt(a) + " – " + fmt(b); }
+  function openWeekSheet(mon, fin) {
+    if (document.querySelector(".brief-ov") || !api.sb) return;
+    var v = { sesiones: sessionsIn(mon) }, zonas = (window.EYLSegui && window.EYLSegui.zonas) || [];
+    var RECUP = [[1, "😫", "Muy mal"], [2, "😕", "Mal"], [3, "😐", "Normal"], [4, "🙂", "Bien"], [5, "💪", "Genial"]];
+    var zsel = select(zonas.map(function (z) { return { v: z.k, t: z.n }; }).concat([{ v: "otra", t: "Otra" }]), "", function (x) { v.zona = x; }, "Elige la zona");
+    var zwrap = field("¿Dónde?", zsel, "block"); zwrap.hidden = true;
+    var pasos = el("input", { type: "number", inputmode: "numeric", min: "0", max: "60000", step: "100", placeholder: "p. ej. 7000" });
+    var ses = el("input", { type: "number", inputmode: "numeric", min: "0", max: "14", value: String(v.sesiones) });
+    var nota = el("textarea", { rows: "2", placeholder: "Cómo ha ido la semana: cansancio, trabajo, viajes, molestias…" });
+    var err = el("p", { class: "err" });
+    var btn = el("button", { class: "btn primary wide", type: "button", text: "Cerrar la semana" });
+    var close = overlay("Cierra tu semana", function (close) {
+      btn.onclick = function () {
+        if (v.dolor == null || v.recup == null || !v.prox) { err.textContent = "Marca el dolor, la recuperación y qué hacemos la semana que viene."; return; }
+        var ci = { dolor: v.dolor, recup: v.recup, prox: v.prox, fecha: todayISO(), sem: mon };
+        if (v.dolor > 0 && v.zona) ci.zona = v.zona;
+        if (pasos.value !== "") ci.pasos = Math.round(+pasos.value);
+        if (ses.value !== "") ci.sesiones = +ses.value;
+        if (nota.value.trim()) ci.nota = nota.value.trim();
+        btn.disabled = true; btn.textContent = "Guardando…";
+        var sb = api.sb, id = ST.clientId;
+        sb.from("seguimiento").select("data").eq("cliente_id", id).maybeSingle().then(function (r) { // se lee lo último para no pisar nada
+          if (r.error) throw r.error;
+          var d = (r.data && r.data.data) || { checkins: {}, tests: [] }; d.checkins = d.checkins || {}; d.checkins[mon] = ci;
+          return sb.from("seguimiento").upsert({ cliente_id: id, data: d }).then(function (u) { if (u.error) throw u.error; ST.SG = d; });
+        }).then(function () {
+          close(); render(); flash(ci.dolor >= 3 && ci.zona && ci.zona !== "otra" ? "Semana cerrada. Tienes el protocolo de esa zona en Más › Control › Dolor." : "¡Semana cerrada! Gracias.");
+        }, function (x) { btn.disabled = false; btn.textContent = "Cerrar la semana"; err.textContent = /fetch|network/i.test((x && x.message) || "") ? "Sin conexión: no se ha guardado. Prueba otra vez." : "No se ha guardado. Prueba otra vez."; });
+      };
+      return [
+        el("p", { class: "bkick", text: "Semana del " + weekLabel(mon) + " · 1 minuto" }),
+        el("h2", { text: fin ? "¡Semana terminada! Ciérrala" : "Cierra tu semana" }),
+        el("div", { class: "nq" }, [el("span", { class: "nql", text: "Dolor máximo esta semana (0 = nada, 10 = el peor)" }),
+          taps(range(0, 10).map(function (n) { return [n, n]; }), null, function (x) { v.dolor = +x; zwrap.hidden = !(+x > 0); }, "esf pain", "Dolor de 0 a 10")]),
+        zwrap,
+        el("div", { class: "nq" }, [el("span", { class: "nql", text: "¿Cómo te has recuperado?" }), taps(RECUP, null, function (x) { v.recup = +x; }, "sen", "Recuperación")]),
+        el("div", { class: "nq" }, [el("span", { class: "nql", text: "La semana que viene…" }), taps(AJ_SEM, null, function (x) { v.prox = x; }, "aj", "La semana que viene")]),
+        el("div", { class: "grid2" }, [field("Pasos medios al día", pasos), field("Entrenos hechos", ses)]),
+        field("Nota de la semana (opcional)", nota, "block"),
+        err, btn,
+        el("button", { class: "btn ghost wide", type: "button", text: "Luego", onclick: function () { lsSet("eyl-cierre-luego-" + ST.clientId, todayISO()); close(); render(); } })
+      ];
+    });
+  }
+  function tryWeekPop(mon, n) { // si está abierta otra ventana («Lo importante de hoy»), espera a que se cierre
+    setTimeout(function () {
+      if (document.querySelector(".brief-ov")) { if (n < 60) tryWeekPop(mon, n + 1); return; }
+      if (UI.view === "entreno" && !ST.editing && pendingWeek() === mon) openWeekSheet(mon, false);
+    }, n ? 1500 : 500);
+  }
+  function weekReminder() {
+    var mon = pendingWeek(); if (!mon) return null;
+    if (!ST.weekPopped && lsGet("eyl-cierre-luego-" + ST.clientId, "") !== todayISO()) { // una vez al entrar, salvo que haya dicho «Luego» hoy
+      ST.weekPopped = true; tryWeekPop(mon, 0);
+    }
+    return el("section", { class: "card remind" }, [
+      el("h2", { text: "🗓️ Cierra tu semana del " + weekLabel(mon) }),
+      el("p", { class: "meta", text: "Dolor, recuperación y si apretamos más o menos la semana que viene. 1 minuto." }),
+      el("button", { class: "btn primary wide", type: "button", text: "Cerrar la semana", onclick: function () { openWeekSheet(mon, false); } })
+    ]);
   }
 
   // ================= STATS / PROGRESS / VOLUME =================
@@ -1094,9 +1427,16 @@
       el("h2", { text: "Progresión semana a semana" }),
       el("p", { class: "meta", text: "Cada barra son los kilos movidos esa semana (reps × kg de todas las series). Debajo: series hechas, repeticiones totales y kilo máximo. Verde: sube · Naranja: se mantiene · Rojo: baja respecto a la semana anterior." })
     ]));
-    var base = ST.PLAN.semanas[0];
+    var base = ST.PLAN.semanas[0], coachV = ST.mode === "entrenador";
+    if (coachV) main.appendChild(el("p", { class: "meta", text: "🔢 «hecho N.º»: puesto en que lo hizo el cliente esa semana (naranja si no es el del plan; «?» si lo apuntó todo de golpe o lo apuntaste tú). Hacer un ejercicio más tarde resta fuerza en ese ejercicio." }));
     base.dias.forEach(function (d0, di) {
       main.appendChild(el("h3", { class: "dayhead", text: "Día " + (di + 1) + (d0.nombre ? " · " + d0.nombre : "") }));
+      if (coachV) { // nota del cliente de cada semana en este día
+        var ns = [];
+        for (var wn = 0; wn < nW; wn++) { var Ln = ST.LOG[wn + "-" + di]; if (!Ln || Ln.borrado || !(Ln.terminado || hasSets(Ln))) continue;
+          var Sn = Ln.sesion || {}; ns.push(el("li", { class: Sn.sen || Sn.ajuste ? "" : "none" }, [el("b", { text: "S" + (wn + 1) + " " }), Sn.sen || Sn.ajuste ? [Sn.sen ? senTxt(Sn.sen) : "", Sn.ajuste ? ajTxt(Sn.ajuste) : "", Sn.esf ? "esf. " + Sn.esf : ""].filter(Boolean).join(" · ") + (Sn.com ? " · «" + (Sn.com.length > 60 ? Sn.com.slice(0, 58) + "…" : Sn.com) + "»" : "") : "sin nota"])); }
+        if (ns.length) main.appendChild(el("ul", { class: "daynotes" }, ns));
+      }
       d0.ej.forEach(function (ex0) {
         if (ex0.act) return; // la activación no se apunta
         var rows = [], tons = [];
@@ -1105,7 +1445,9 @@
           var ex = dd && (dd.ej.filter(function (e) { return e.id === ex0.id; })[0] || dd.ej.filter(function (e) { return e.n === ex0.n; })[0]);
           var st = ex ? exStats(w, di, ex) : null;
           tons.push(st && st.any ? st.ton : null);
-          rows.push({ w: w, st: st, planned: ex ? ex.series.length : 0, dv: ex && ex.uni ? 2 : 1 });
+          var oi = ex && coachV ? orderInfo(w, di) : null;
+          var Lw = ST.LOG[w + "-" + di], tqw = ex && Lw && Lw.ej && Lw.ej[ex.id] && Lw.ej[ex.id].tq;
+          rows.push({ w: w, st: st, planned: ex ? ex.series.length : 0, dv: ex && ex.uni ? 2 : 1, pos: oi && oi.pos[ex.id], pp: oi && oi.planPos[ex.id], fi: oi && oi.fiable, tq: tqw });
         }
         var t = trend(tons);
         var max = Math.max.apply(null, tons.map(function (v) { return v || 0; }));
@@ -1121,14 +1463,17 @@
             el("span", { class: "pwk", text: "S" + (r.w + 1) }),
             el("span", { class: "pstat", text: has ? num(st.sets / r.dv) + "/" + num(r.planned / r.dv) + (r.dv > 1 ? " ser/lado" : " ser") : "—" }),
             el("span", { class: "pstat", text: has ? num(st.reps / r.dv) + (r.dv > 1 ? " reps/lado" : " reps") : "" }),
-            el("span", { class: "pstat", text: has && st.kg ? num(st.kg) + " kg máx" : "" })
+            el("span", { class: "pstat", text: has && st.kg ? num(st.kg) + " kg máx" : "" }),
+            has && r.tq && r.tq !== "igual" ? el("span", { class: "pstat ptq " + r.tq, text: r.tq === "mejor" ? "técnica 👍" : "técnica 👎" }) : null,
+            coachV ? el("span", { class: "pstat pord" + (has && r.pos && r.pp && r.pos !== r.pp ? " moved" : ""), title: r.pp ? "En el plan va " + r.pp + ".º" : null,
+              text: has ? (r.pos ? "hecho " + r.pos + ".º" + (r.fi ? "" : "?") : "orden —") : "" }) : null
           ]);
           if (has) prev = st;
           return col;
         });
         main.appendChild(el("section", { class: "card prog" }, [
           el("div", { class: "proghead" }, [
-            el("div", { class: "titles" }, [el("h2", { text: ex0.n }), el("p", { class: "meta", text: (ex0.g || []).join(", ") + ((ex0.g || []).length ? " · " : "") + "kg movidos por semana" })]),
+            el("div", { class: "titles" }, [el("h2", { text: (d0.star === ex0.id ? "⭐ " : "") + ex0.n }), el("p", { class: "meta", text: (ex0.g || []).join(", ") + ((ex0.g || []).length ? " · " : "") + "kg movidos por semana" })]),
             el("span", { class: "pill " + t.cls, text: t.txt })
           ]),
           el("div", { class: "pchart", role: "img", "aria-label": "Kilos movidos por semana: " + tons.map(function (v, i) { return "S" + (i + 1) + " " + (v ? num(v) : "sin datos"); }).join(", ") }, cols)
@@ -1195,6 +1540,19 @@
     var wrap = el("section", { class: "card edit" }, [
       el("h2", { text: "Editando · Semana " + (UI.w + 1) + " · Día " + (UI.d + 1) }),
       field("Nombre del día", txt(d.nombre, function (v) { d.nombre = v; }), "block"),
+      field("Objetivo de la sesión (lo ve el cliente arriba del día)", txt(d.obj, function (v) { if (v) d.obj = v; else delete d.obj; }, { placeholder: "p. ej. Fuerza en sentadilla y volumen de glúteo" }), "block"),
+      field("Ejercicio estrella", (function () { // select() se desactiva en solo lectura y el panel edita con readOnly
+        var sel = el("select", { onchange: function () { if (sel.value) d.star = sel.value; else delete d.star; ST.dirty = true; render(); } }, [el("option", { value: "", text: "Ninguno" })]
+          .concat(d.ej.filter(function (e) { return !e.act; }).map(function (e) { var o = el("option", { value: e.id, text: e.n }); if (e.id === d.star) o.selected = true; return o; })));
+        return sel; })(), "block"),
+      el("button", { class: "btn ghost", type: "button", text: "Copiar objetivo y estrella a todas las semanas", onclick: function () {
+        var stx = starEx(d), n = 0;
+        ST.PLAN.semanas.forEach(function (w) { var o = w.dias[UI.d]; if (!o || o === d) return;
+          if (d.obj) o.obj = d.obj; else delete o.obj;
+          var m = stx && (o.ej.filter(function (e) { return e.id === stx.id; })[0] || o.ej.filter(function (e) { return e.n === stx.n; })[0]);
+          if (m) o.star = m.id; else delete o.star; n++; });
+        ST.dirty = true; flash("Copiado al día " + (UI.d + 1) + " de " + n + " semanas más");
+      } }),
       el("div", { class: "grid2" }, [field("Nombre que ve el cliente", txt(ST.PLAN.cliente, function (v) { ST.PLAN.cliente = v; })),
         field("Inicio (lunes S1)", txt(ST.PLAN.inicio, function (v) { ST.PLAN.inicio = v; }, { type: "date" }))]),
       field("Objetivo", txt(ST.PLAN.objetivo, function (v) { ST.PLAN.objetivo = v; }), "block"),

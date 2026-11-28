@@ -117,6 +117,7 @@ const ZONAS=[
   src:[["Seguir activo con el modelo de control del dolor (Aquiles)","10.1177/0363546506298279"],["Guía de tendinopatía de Aquiles (revisión 2024)","10.1016/j.jphys.2025.06.001"]]}
 ];
 const ZBY=Object.fromEntries(ZONAS.map(z=>[z.k,z]));
+const PROX={mas:"⬆️ Apretar más",igual:"👌 Igual",menos:"⬇️ Aflojar"};
 const RECUP=[[1,"Muy mal"],[2,"Mal"],[3,"Normal"],[4,"Bien"],[5,"Genial"]];
 
 /* ======================= ESTADO Y DATOS ======================= */
@@ -218,7 +219,7 @@ function checkinHTML(){
  if(ci&&!S.editCi)form=`<div class="nkpis"><div><span class="nk">Dolor máx.</span><span class="nv">${ci.dolor??"—"}/10</span><span class="ns">${ci.zona&&ZBY[ci.zona]?ZBY[ci.zona].n:ci.zona==="otra"?"Otra zona":"Sin dolor"}</span></div>
    <div><span class="nk">Recuperación</span><span class="nv">${ci.recup??"—"}/5</span><span class="ns">${ci.recup?RECUP[ci.recup-1][1]:""}</span></div>
    <div><span class="nk">Pasos/día</span><span class="nv">${ci.pasos?Number(ci.pasos).toLocaleString("es-ES"):"—"}</span></div>
-   <div><span class="nk">Sesiones</span><span class="nv">${ci.sesiones??"—"}</span></div></div>
+   <div><span class="nk">Sesiones</span><span class="nv">${ci.sesiones??"—"}</span></div>${ci.prox?`<div><span class="nk">Semana que viene</span><span class="nv">${PROX[ci.prox]||"—"}</span></div>`:""}</div>
    ${ci.nota?`<p class="nnote">${esc(ci.nota)}</p>`:""}
    ${ci.zona&&ZBY[ci.zona]&&ci.dolor>=3?`<button class="btn ghost small" type="button" data-zona="${ci.zona}">Ver protocolo de ${esc(ZBY[ci.zona].n.toLowerCase())}</button>`:""}
    <button class="btn ghost small" type="button" data-act="editci">Editar</button>`;
@@ -237,8 +238,8 @@ function checkinHTML(){
    <div class="nwide"><button class="btn primary small" type="submit">Guardar check-in</button></div></form>`}
  return `<div class="npanel"><div class="nrow nbetween"><h2>Semana del ${fmtD(ws)}</h2>${ci?'<span class="npill l-ok">Hecho</span>':'<span class="npill l-warn">Pendiente</span>'}</div>
   <p class="nsmall nmuted">1 minuto. ${S.coach?"Lo rellena el cliente cada semana.":"Hambre, energía y sueño van en el check-in de Nutrición."}</p>${form}</div>
- ${weeks.length?`<div class="npanel"><h2>Últimas semanas</h2><div class="ntbl"><table class="nmini"><thead><tr><th>Semana</th><th>Dolor</th><th>Zona</th><th>Recup.</th><th>Pasos</th><th>Ent.</th></tr></thead><tbody>
-  ${weeks.map(w=>{const c=S.d.checkins[w];const pc=c.dolor>=6?"ndown":c.dolor>=3?"sgwarn":"";return `<tr><td>${fmtD(w)}</td><td class="${pc}">${c.dolor??"—"}</td><td class="ntxt">${c.zona&&ZBY[c.zona]?esc(ZBY[c.zona].n):c.zona==="otra"?"Otra":"—"}</td><td>${c.recup??"—"}</td><td>${c.pasos?Number(c.pasos).toLocaleString("es-ES"):"—"}</td><td>${c.sesiones??"—"}</td></tr>`}).join("")}
+ ${weeks.length?`<div class="npanel"><h2>Últimas semanas</h2><div class="ntbl"><table class="nmini"><thead><tr><th>Semana</th><th>Dolor</th><th>Zona</th><th>Recup.</th><th>Pasos</th><th>Ent.</th><th>Próx.</th></tr></thead><tbody>
+  ${weeks.map(w=>{const c=S.d.checkins[w];const pc=c.dolor>=6?"ndown":c.dolor>=3?"sgwarn":"";return `<tr><td>${fmtD(w)}</td><td class="${pc}">${c.dolor??"—"}</td><td class="ntxt">${c.zona&&ZBY[c.zona]?esc(ZBY[c.zona].n):c.zona==="otra"?"Otra":"—"}</td><td>${c.recup??"—"}</td><td>${c.pasos?Number(c.pasos).toLocaleString("es-ES"):"—"}</td><td>${c.sesiones??"—"}</td><td>${c.prox?PROX[c.prox].split(" ")[0]:"—"}</td></tr>`}).join("")}
   </tbody></table></div>${weeks.some(w=>S.d.checkins[w].nota)?`<h3>Comentarios</h3>${weeks.filter(w=>S.d.checkins[w].nota).map(w=>`<p class="nsmall"><b>${fmtD(w)}:</b> ${esc(S.d.checkins[w].nota)}</p>`).join("")}`:""}</div>`:""}`;
 }
 
@@ -359,4 +360,5 @@ async function onSubmit(f){
   if(ok){S.newTest=false;render()}else if(btn)btn.disabled=false;
  }
 }
+window.EYLSegui.zonas=ZONAS.map(z=>({k:z.k,n:z.n}));
 })();

@@ -288,3 +288,48 @@ button.prevhint{cursor:pointer;min-height:40px}
 .movvid video{width:100%;max-width:240px;border-radius:12px;display:block;background:#000}
 .movmas{margin:4px 0 8px}
 .movmas summary{cursor:pointer;font-size:13.5px;color:var(--accent);min-height:40px;display:flex;align-items:center}
+/* Nota del entreno, cierre de semana y orden real (28 nov 2026) */
+.notef{display:grid;gap:12px}
+.nq{display:grid;gap:6px}
+.nql{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.taps{display:grid;gap:6px}
+.taps.sen{grid-template-columns:repeat(5,minmax(0,1fr))}
+.taps.aj{grid-template-columns:repeat(3,minmax(0,1fr))}
+.taps.esf{grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
+.taps.pain{grid-template-columns:repeat(11,minmax(0,1fr));gap:3px}
+.tap{font:inherit;background:var(--surface2);color:var(--fg);border:1px solid var(--line);border-radius:10px;min-height:44px;padding:6px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0}
+.taps.esf .tap{font-family:var(--num);font-size:15px;padding:6px 0;border-radius:8px}
+.tap .tico{font-size:22px;line-height:1}
+.tap small{font-size:11px;line-height:1.15;color:var(--muted);text-align:center;overflow-wrap:anywhere}
+.tap[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 22%,var(--surface2));border-color:var(--accent);color:var(--fg)}
+.tap[aria-pressed="true"] small{color:var(--fg)}
+.tap:disabled{cursor:default;opacity:.85}
+.tap:disabled:not([aria-pressed="true"]){opacity:.45}
+.field.ask>span{color:var(--warn)}
+.btn.off{opacity:.55}
+.card.remind{border-color:color-mix(in srgb,var(--warn) 55%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--surface))}
+.card.remind h2{font-size:20px}
+.ordtag{margin:4px 0 0;font-size:12px;color:var(--muted)}
+.ordtag.moved{color:var(--warn);font-weight:600}
+.cnotecard h2{font-size:20px}
+.cnote{margin:0;font-size:15px;font-weight:600}
+.cnote.none{color:var(--warn);font-weight:400;font-size:14px}
+.ordlist{margin:0;padding-left:22px;font-size:14px;display:grid;gap:2px}
+.ordlist li.moved{color:var(--warn)}
+.ordlist small{color:var(--muted)}
+.pstat.pord{color:var(--muted)}
+.pstat.pord.moved{color:var(--warn);font-weight:700}
+.daynotes{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:3px;font-size:13px;color:var(--cream)}
+.daynotes li.none{color:var(--warn)}
+.brief-sheet .err:empty{display:none}
+/* Objetivo de la sesión, ejercicio estrella y técnica (28 nov 2026) */
+.card.sgoal{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));gap:8px}
+.sgoal p{margin:0;display:grid;gap:2px}
+.sgoal b{font-family:var(--display);font-size:15px;letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
+.sgoal .sgstar b{color:#e8c25a}
+.sgoal span{font-size:16px;font-weight:600}
+.card.exc.star{border-color:color-mix(in srgb,#e8c25a 60%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,#e8c25a 30%,transparent) inset}
+.startag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#e8c25a;margin-bottom:2px}
+.nq.tq{border-top:1px solid var(--line);padding-top:10px}
+.pstat.ptq.mejor{color:var(--accent);font-weight:700}
+.pstat.ptq.peor{color:var(--warn)}

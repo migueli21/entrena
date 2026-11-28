@@ -159,7 +159,7 @@
     var pesos = (nd && nd.pesos) || [], last = pesos.length ? pesos.map(function (p) { return p[0]; }).sort().pop() : null;
     if (!last || days(last, T) >= 7) return { k: "peso", t: "Apunta tu peso de hoy", s: "Mejor en ayunas, después de ir al baño. 10 segundos." };
     var ci = sg && sg.checkins && sg.checkins[weekStart(T)];
-    if (!ci) return { k: "checkin", t: "Check-in de la semana", s: "Dolor, recuperación y pasos. 1 minuto.", go: "segui" };
+    if (!ci && !window.EYL_CIERRE) return { k: "checkin", t: "Check-in de la semana", s: "Dolor, recuperación y pasos. 1 minuto.", go: "segui" };
     var per = (nd && nd.perim) || [], lp = per.length ? per.map(function (p) { return p.fecha; }).sort().pop() : null;
     if (!lp || days(lp, T) >= 30) return { k: "perim", t: "Medidas del mes", s: "Cintura, cadera y poco más con una cinta. 2 minutos.", go: "nutri" };
     return null;
